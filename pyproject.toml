@@ -1,0 +1,25 @@
+[project]
+name = "summit-nmf"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "weihaolee", email = "wl61@rice.edu" }
+]
+requires-python = ">=3.13"
+dependencies = [
+    "numpy>=2.2.4",
+    "optuna>=4.2.1",
+    "optunahub>=0.2.0",
+    "pandas>=2.2.3",
+    "scikit-learn>=1.6.1",
+    "torch>=2.6.0",
+    "tqdm>=4.67.1",
+]
+
+[project.scripts]
+summit-nmf = "summit_nmf:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
