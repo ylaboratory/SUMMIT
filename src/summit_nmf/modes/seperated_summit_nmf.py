@@ -4,9 +4,14 @@ import pandas as pd
 
 from copy import deepcopy
 from tqdm import tqdm
-from .base_summit_nmf import SummitNMFBase
-from summit_nmf.dataloader import get_dataloader, SUMMITNMFDataset
-from typing import Iterable, Optional, Union, Dict, List
+from torch.utils.data import DataLoader
+from typing import Iterable, Dict, List, Union, Optional, Tuple
+
+from summit_nmf.modes.base_summit_nmf import SummitNMFBase
+from summit_nmf.utils.data_preprocess import DataPreprocessor
+from summit_nmf.utils.dataset import preload_dataset, swap_dataset
+
+TensorLike = Union[np.ndarray, torch.Tensor]
 
 
 class SeparatedSummitNMF(SummitNMFBase):
@@ -26,7 +31,8 @@ class SeparatedSummitNMF(SummitNMFBase):
         verbose: bool = False,
         preload: bool = False,
         dtype: torch.dtype = torch.float32,
-        stratify_labels: Optional[Iterable[Union[str, int]]] = None,
+        shuffle: bool = True,
+        num_workers: int = 0,
     ):
         device = device if device else torch.device("cpu")
         super().__init__(
@@ -43,37 +49,46 @@ class SeparatedSummitNMF(SummitNMFBase):
             verbose,
             preload,
             dtype,
-            stratify_labels,
+            shuffle,
+            num_workers,
         )
         self.alpha = alpha
 
-    def fit(self, X, y, **kwargs):
+    def fit(self, X: TensorLike, y: Dict[str, Iterable[str | int]], **kwargs):
         W = kwargs.get("W", None)
         H = kwargs.get("H", None)
         Bs = kwargs.get("Bs", None)
-        dataset = SUMMITNMFDataset(
-            X=X,
-            y=y,
-            W=W,
-            H=H,
-            Bs=Bs,
-            n_signatures=self.n_components,
+
+        self.dp = DataPreprocessor(
+            n_components=self.n_components,
             class_imbalance=self.class_imbalance,
-            preload=self.preload,
-            device=self.device,
             random_state=self.random_state,
             dtype=self.dtype,
         )
+        X, Ys, W, H, Bs, M, Ls = self.dp.fit(X, y, W, H, Bs)
+        H = H.to(self.device, non_blocking=True)
+        Bs = [B.to(self.device, non_blocking=True) for B in Bs]
 
-        self.ref_Y = dataset.get_ref_Y()
+        dataset = None
+        if self.preload:
+            dataset = preload_dataset(X=X, Ys=Ys, W=W, M=M, Ls=Ls, device=self.device)
+        else:
+            dataset = swap_dataset(X=X, Ys=Ys, W=W, M=M, Ls=Ls, device=self.device)
+
+        self.ref_Y = self.dp.ref_Y
         self.n_covariates = len(self.ref_Y)
         self.cov_names = self.ref_Y.keys()
         self.alpha = self._check_alpha(self.alpha)
         self.batch_size = (
             self.batch_size if self.batch_size is not None else len(dataset)
         )
-        dataloader = get_dataloader(
-            dataset, batch_size=self.batch_size, stratify_labels=self.stratify_labels
+
+        dataloader = DataLoader(
+            dataset,
+            batch_size=self.batch_size,
+            shuffle=self.shuffle,
+            num_workers=self.num_workers,
+            pin_memory=True,
         )
 
         self.loss_history_ = {
@@ -89,40 +104,48 @@ class SeparatedSummitNMF(SummitNMFBase):
             if self.verbose
             else range(self.max_iter)
         )
+
         for iter_ in progress_bar:
             for batch_data, batch_idx in dataloader:
-                X, W, H, M, Ys, Ls, Bs = batch_data
+                X_batch, W_batch, M_batch, Ys_batch, Ls_batch = batch_data
 
                 # update H
-                H = self._update_H(X=X, W=W, H=H, M=M)
+                H = self._update_H(X=X_batch, W=W_batch, H=H, M=M_batch)
 
                 # update Bs
-                Bs = [self._update_B(Y=Y, W=W, B=B, L=L) for Y, B, L in zip(Ys, Bs, Ls)]
+                Bs = [
+                    self._update_B(Y=Y, W=W_batch, B=B, L=L)
+                    for Y, B, L in zip(Ys_batch, Bs, Ls_batch)
+                ]
 
                 # update Ys
                 if self.flexible_label_matrix:
-                    Ys = [
-                        self._update_Y(Y=Y, W=W, B=B, L=L)
-                        for Y, B, L in zip(Ys, Bs, Ls)
+                    Ys_batch = [
+                        self._update_Y(Y=Y, W=W_batch, B=B, L=L)
+                        for Y, B, L in zip(Ys_batch, Bs, Ls_batch)
                     ]
 
                 # update W
-                W = self._update_W(X=X, Ys=Ys, W=W, H=H, Bs=Bs, M=M, Ls=Ls)
+                W_batch = self._update_W(
+                    X=X_batch,
+                    Ys=Ys_batch,
+                    W=W_batch,
+                    H=H,
+                    Bs=Bs,
+                    M=M_batch,
+                    Ls=Ls_batch,
+                )
 
                 # update to dataset
-                dataset.update(indices=batch_idx, W=W, H=H, Bs=Bs, Ys=Ys)
+                dataset.update(indices=batch_idx, W=W_batch, Ys=Ys_batch)
 
-            matrices = dataset.get_all_matrices()
+            # loss is computed on the entire dataset, and are on cpu
+            # to avoid memory issues
+            X, W, M, Ys, Ls = dataset.get_all_matrices()
+            H_copy = H.clone().cpu()
+            Bs_copy = [B.clone().cpu() for B in Bs]
             reconstruction_loss, harmonic_loss, ind_harmonic_loss, total_loss = (
-                self._compute_loss(
-                    matrices["X"],
-                    matrices["Ys"],
-                    matrices["W"],
-                    matrices["H"],
-                    matrices["Bs"],
-                    matrices["M"],
-                    matrices["Ls"],
-                )
+                self._compute_loss(X, Ys, W, H_copy, Bs_copy, M, Ls)
             )
             self.loss_history_["reconstruction"].append(reconstruction_loss)
             self.loss_history_["harmonic"].append(harmonic_loss)
@@ -146,40 +169,57 @@ class SeparatedSummitNMF(SummitNMFBase):
         self.iter = iter_
         self.loss_history_ = pd.DataFrame(self.loss_history_)
 
-        matrices = dataset.get_all_matrices()
-        self.W = matrices["W"].cpu().numpy()
-        self.H = matrices["H"].cpu().numpy()
-        self.M = matrices["M"].cpu().numpy()
-        self.Bs = [B.cpu().numpy() for B in matrices["Bs"]]
-        self.Ys = [Y.cpu().numpy() for Y in matrices["Ys"]]
-        self.Ls = [L.cpu().numpy() for L in matrices["Ls"]]
+        X, W, M, Ys, Ls = dataset.get_all_matrices()
+        self.W = W.numpy()
+        self.H = H.numpy()
+        self.M = M.numpy()
+        self.Bs = [B.numpy() for B in Bs]
+        self.Ys = [Y.numpy() for Y in Ys]
+        self.Ls = [L.numpy() for L in Ls]
 
-    def fit_transform(self, X, y):
-        return self.fit(X, y).transform(X)
+    def fit_transform(
+        self, X: TensorLike, y: Dict[str, Iterable[str | int]]
+    ) -> Tuple[np.ndarray, List[np.ndarray]]:
+        return self.fit(X, y).transform(X, y)
 
-    def transform(self, X, y=None, max_iter=None):
+    def transform(
+        self,
+        X: TensorLike,
+        y: Dict[str, Iterable[str | int]] = None,
+        max_iter: Optional[int] = None,
+    ):
         self._check_parameters(["H", "ref_Y"])
         max_iter = self.max_iter if max_iter is None else max_iter
 
-        transform_dataset = SUMMITNMFDataset(
-            X=X,
-            y=y,
-            W=None,
-            H=self.H,
-            Bs=self.Bs,
-            n_signatures=self.n_components,
-            class_imbalance=self.class_imbalance,
-            preload=self.preload,
-            device=self.device,
-            random_state=self.random_state,
-            dtype=self.dtype,
-            ref_Y=self.ref_Y,
-        )
+        H = torch.tensor(self.H, dtype=self.dtype).to(self.device, non_blocking=True)
+        Bs = [
+            torch.tensor(B, dtype=self.dtype).to(self.device, non_blocking=True)
+            for B in self.Bs
+        ]
 
-        transform_dataloader = get_dataloader(
-            transform_dataset,
+        if y is None:
+            X, W, M = self.dp.transform(X)
+            Ys = [
+                torch.zeros((X.shape[0], B.shape[0]), dtype=self.dtype) for B in Bs
+            ]  # placeholder
+            Ls = [
+                torch.zeros((X.shape[0], B.shape[1]), dtype=self.dtype) for B in Bs
+            ]  # placeholder
+        else:
+            X, Ys, W, M, Ls = self.dp.transform(X, y)
+
+        dataset = None
+        if self.preload:
+            dataset = preload_dataset(X=X, Ys=Ys, W=W, M=M, Ls=Ls, device=self.device)
+        else:
+            dataset = swap_dataset(X=X, Ys=Ys, W=W, M=M, Ls=Ls, device=self.device)
+
+        dataloader = DataLoader(
+            dataset,
             batch_size=self.batch_size,
-            stratify_labels=None,
+            shuffle=self.shuffle,
+            num_workers=self.num_workers,
+            pin_memory=True,
         )
 
         progress_bar = (
@@ -188,37 +228,45 @@ class SeparatedSummitNMF(SummitNMFBase):
             else range(max_iter)
         )
         for iter_ in progress_bar:
-            for batch_data, batch_idx in transform_dataloader:
-                X, W, H, M, Ys, Ls, Bs = batch_data
+            for batch_data, batch_idx in dataloader:
+                X_batch, W_batch, M_batch, Ys_batch, Ls_batch = batch_data
 
                 if y is not None:
                     if self.flexible_label_matrix:
-                        Ys = [
+                        Ys_batch = [
                             self._update_Y(Y=Y, W=W, B=B, L=L)
-                            for Y, B, L in zip(Ys, Bs, Ls)
+                            for Y, B, L in zip(Ys_batch, Bs, Ls_batch)
                         ]
 
-                    W = self._update_W(X=X, Ys=Ys, W=W, H=H, Bs=Bs, M=M, Ls=Ls)
+                    W = self._update_W(
+                        X=X_batch,
+                        Ys=Ys_batch,
+                        W=W_batch,
+                        H=H,
+                        Bs=Bs,
+                        M=M_batch,
+                        Ls=Ls_batch,
+                    )
                 else:
                     # if is unsupervised, only update W using X
-                    numerator = X @ H.T
-                    denominator = W @ H @ H.T
-                    W *= numerator / torch.clamp(denominator, min=self.eps)
+                    numerator = X_batch @ H.T
+                    denominator = W_batch @ H @ H.T
+                    W_batch *= numerator / torch.clamp(denominator, min=self.eps)
 
-                transform_dataset.update(indices=batch_idx, W=W, H=H, Bs=Bs, Ys=Ys)
+                dataset.update(indices=batch_idx, W=W_batch, Ys=Ys_batch)
 
-        matrices = transform_dataset.get_all_matrices()
+        X, W, M, Ys, Ls = dataset.get_all_matrices()
         if y is not None:
-            Ys = [Y.cpu().numpy() for Y in matrices["Ys"]]
-            return matrices["W"].cpu().numpy(), Ys
+            Ys = [Y.numpy() for Y in Ys]
+            return W.numpy(), Ys
         else:
-            return matrices["W"].cpu().numpy()
+            return W.numpy()
 
-    def reconstruct(self):
+    def reconstruct(self) -> np.ndarray:
         self._check_parameters(["W", "H"])
         return self.W @ self.H
 
-    def predict(self, X) -> Dict[str, List[str]]:
+    def predict(self, X: TensorLike) -> Dict[str, List[str]]:
         self._check_parameters(["H", "Bs", "ref_Y"])
 
         # Transform the input data to the latent space
@@ -238,7 +286,7 @@ class SeparatedSummitNMF(SummitNMFBase):
 
         return predicted_labels
 
-    def get_components(self):
+    def get_components(self) -> Dict[str, np.ndarray]:
         matrices = {
             "W": deepcopy(self.W),
             "H": deepcopy(self.H),

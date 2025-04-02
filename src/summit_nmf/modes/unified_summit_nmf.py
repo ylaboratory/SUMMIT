@@ -1,12 +1,18 @@
 import torch
 import numpy as np
 import pandas as pd
+
 from copy import deepcopy
-from itertools import product
 from tqdm import tqdm
-from .base_summit_nmf import SummitNMFBase
-from summit_nmf.dataloader import get_dataloader, SUMMITNMFDataset
-from typing import Iterable, Optional, Union
+from torch.utils.data import DataLoader
+from typing import Iterable, Dict, List, Union, Tuple, Optional
+from itertools import product
+
+from summit_nmf.modes.base_summit_nmf import SummitNMFBase
+from summit_nmf.utils.data_preprocess import DataPreprocessor
+from summit_nmf.utils.dataset import preload_dataset, swap_dataset
+
+TensorLike = Union[np.ndarray, torch.Tensor]
 
 
 class UnifiedSummitNMF(SummitNMFBase):
@@ -27,7 +33,8 @@ class UnifiedSummitNMF(SummitNMFBase):
         verbose: bool = False,
         preload: bool = False,
         dtype: torch.dtype = torch.float32,
-        stratify_labels: Optional[Iterable[Union[str, int]]] = None,
+        shuffle: bool = True,
+        num_workers: int = 0,
     ):
         device = device if device else torch.device("cpu")
         super().__init__(
@@ -44,43 +51,50 @@ class UnifiedSummitNMF(SummitNMFBase):
             verbose,
             preload,
             dtype,
-            stratify_labels,
+            shuffle,
+            num_workers,
         )
 
-    def fit(self, X, y, **kwargs):
+    def fit(self, X: TensorLike, y: Dict[str, Iterable[str | int]], **kwargs):
         W = kwargs.get("W", None)
         H = kwargs.get("H", None)
         Bs = kwargs.get("Bs", None)
-        dataset = SUMMITNMFDataset(
-            X=X,
-            y=y,
-            W=W,
-            H=H,
-            Bs=Bs,
-            n_signatures=self.n_components,
+
+        self.dp = DataPreprocessor(
+            n_components=self.n_components,
             class_imbalance=self.class_imbalance,
-            preload=self.preload,
-            device=self.device,
             random_state=self.random_state,
             dtype=self.dtype,
         )
+        X, Ys, W, H, Bs, M, Ls = self.dp.fit(X, y, W, H, Bs)
+        H = H.to(self.device, non_blocking=True)
+        Bs = [B.to(self.device, non_blocking=True) for B in Bs]
 
-        self.ref_Y = dataset.get_ref_Y()
+        dataset = None
+        if self.preload:
+            dataset = preload_dataset(X=X, Ys=Ys, W=W, M=M, Ls=Ls, device=self.device)
+        else:
+            dataset = swap_dataset(X=X, Ys=Ys, W=W, M=M, Ls=Ls, device=self.device)
+
+        self.ref_Y = self.dp.ref_Y
         self.n_covariates = len(self.ref_Y)
         self.cov_names = self.ref_Y.keys()
-        self.alpha = self._check_alpha(self.alpha)
         self.batch_size = (
             self.batch_size if self.batch_size is not None else len(dataset)
         )
-        dataloader = get_dataloader(
-            dataset, batch_size=self.batch_size, stratify_labels=self.stratify_labels
+
+        dataloader = DataLoader(
+            dataset,
+            batch_size=self.batch_size,
+            shuffle=self.shuffle,
+            num_workers=self.num_workers,
+            pin_memory=True,
         )
 
         self.loss_history_ = {
             "reconstruction": [],
             "harmonic": [],
             "total": [],
-            **{f"harmonic_{cov_name}": [] for cov_name in self.cov_names},
         }
 
         iter_ = 0
@@ -89,38 +103,52 @@ class UnifiedSummitNMF(SummitNMFBase):
             if self.verbose
             else range(self.max_iter)
         )
+
         for iter_ in progress_bar:
             for batch_data, batch_idx in dataloader:
-                X, W, H, M, Ys, Ls, Bs = batch_data
+                X_batch, W_batch, M_batch, Ys_batch, Ls_batch = batch_data
 
                 # compute L
-                L = torch.ones_like(Ls[0], dtype=self.dtype, device=Ls[0].device)
-                for l_mat in Ls:
+                L = torch.ones_like(
+                    Ls_batch[0], dtype=self.dtype, device=Ls_batch[0].device
+                )
+                for l_mat in Ls_batch:
                     L *= l_mat
 
                 # update H
-                H = self._update_H(X=X, W=W, H=H, M=M)
+                H = self._update_H(X=X_batch, W=W_batch, H=H, M=M_batch)
 
                 # update Bs
                 for i in range(self.n_covariates):
-                    YB = self._compute_YB(Ys, Bs, L)
-                    Bs[i] = self._update_B(Y=Ys[i], W=W, B=Bs[i], YB=YB, L=L)
+                    YB = self._compute_YB(Ys_batch, Bs, Ls_batch)
+                    Bs[i] = self._update_B(
+                        Y=Ys[i], W=W_batch, B=Bs[i], YB=YB, L=Ls_batch
+                    )
 
                 # update Ys
                 if self.flexible_label_matrix:
                     for i in range(self.n_covariates):
-                        YB = self._compute_YB(Ys, Bs, L)
-                        Ys[i] = self._update_Y(Y=Ys[i], W=W, B=Bs[i], YB=YB, L=L)
+                        YB = self._compute_YB(Ys_batch, Bs, Ls_batch)
+                        Ys_batch[i] = self._update_Y(
+                            Y=Ys_batch[i], W=W_batch, B=Bs[i], YB=YB, L=Ls_batch
+                        )
 
                 # update W
-                YB = self._compute_YB(Ys, Bs, L)
-                W = self._update_W(X=X, W=W, H=H, YB=YB, M=M, L=L)
+                YB = self._compute_YB(Ys_batch, Bs, Ls_batch)
+                W_batch = self._update_W(
+                    X=X_batch, W=W_batch, H=H, YB=YB, M=M_batch, L=Ls_batch
+                )
 
                 # update to dataset
-                dataset.update(indices=batch_idx, W=W, H=H, Bs=Bs, Ys=Ys)
+                dataset.update(indices=batch_idx, W=W_batch, Ys=Ys_batch)
 
-            reconstruction_loss, harmonic_loss, total_loss = self._compute_loss(
-                X, Ys, W, H, Bs, M, L
+            # loss is computed on the entire dataset, and are on cpu
+            # to avoid memory issues
+            X, W, M, Ys, Ls = dataset.get_all_matrices()
+            H_copy = H.clone().cpu()
+            Bs_copy = [B.clone().cpu() for B in Bs]
+            reconstruction_loss, harmonic_loss, ind_harmonic_loss, total_loss = (
+                self._compute_loss(X, Ys, W, H_copy, Bs_copy, M, Ls)
             )
             self.loss_history_["reconstruction"].append(reconstruction_loss)
             self.loss_history_["harmonic"].append(harmonic_loss)
@@ -142,41 +170,56 @@ class UnifiedSummitNMF(SummitNMFBase):
         self.iter = iter_
         self.loss_history_ = pd.DataFrame(self.loss_history_)
 
-        matrices = dataset.get_all_matrices()
-        self.W = matrices["W"].cpu().numpy()
-        self.H = matrices["H"].cpu().numpy()
-        self.M = matrices["M"].cpu().numpy()
-        self.Bs = [B.cpu().numpy() for B in matrices["Bs"]]
-        self.Ys = [Y.cpu().numpy() for Y in matrices["Ys"]]
+        X, W, M, Ys, Ls = dataset.get_all_matrices()
+        self.W = W.numpy()
+        self.H = H.numpy()
+        self.M = M.numpy()
+        self.Bs = [B.numpy() for B in Bs]
+        self.Ys = [Y.numpy() for Y in Ys]
 
         L = torch.ones_like(Ls[0], dtype=self.dtype, device=Ls[0].device)
         for l_mat in Ls:
             L *= l_mat
         self.L = L
 
-    def transform(self, X, y=None, max_iter=None):
+    def transform(
+        self,
+        X: TensorLike,
+        y: Dict[str, Iterable[str | int]] = None,
+        max_iter: Optional[int] = None,
+    ):
         self._check_parameters(["H", "ref_Y"])
         max_iter = self.max_iter if max_iter is None else max_iter
 
-        transform_dataset = SUMMITNMFDataset(
-            X=X,
-            y=y,
-            W=None,
-            H=self.H,
-            Bs=self.Bs,
-            n_signatures=self.n_components,
-            class_imbalance=self.class_imbalance,
-            preload=self.preload,
-            device=self.device,
-            random_state=self.random_state,
-            dtype=self.dtype,
-            ref_Y=self.ref_Y,
-        )
+        H = torch.tensor(self.H, dtype=self.dtype).to(self.device, non_blocking=True)
+        Bs = [
+            torch.tensor(B, dtype=self.dtype).to(self.device, non_blocking=True)
+            for B in self.Bs
+        ]
 
-        transform_dataloader = get_dataloader(
-            transform_dataset,
+        if y is None:
+            X, W, M = self.dp.transform(X)
+            Ys = [
+                torch.zeros((X.shape[0], B.shape[0]), dtype=self.dtype) for B in Bs
+            ]  # placeholder
+            Ls = [
+                torch.zeros((X.shape[0], B.shape[1]), dtype=self.dtype) for B in Bs
+            ]  # placeholder
+        else:
+            X, Ys, W, M, Ls = self.dp.transform(X, y)
+
+        dataset = None
+        if self.preload:
+            dataset = preload_dataset(X=X, Ys=Ys, W=W, M=M, Ls=Ls, device=self.device)
+        else:
+            dataset = swap_dataset(X=X, Ys=Ys, W=W, M=M, Ls=Ls, device=self.device)
+
+        dataloader = DataLoader(
+            dataset,
             batch_size=self.batch_size,
-            stratify_labels=None,
+            shuffle=self.shuffle,
+            num_workers=self.num_workers,
+            pin_memory=True,
         )
 
         progress_bar = (
@@ -185,61 +228,54 @@ class UnifiedSummitNMF(SummitNMFBase):
             else range(max_iter)
         )
         for iter_ in progress_bar:
-            for batch_data, batch_idx in transform_dataloader:
-                X, W, H, M, Ys, Ls, Bs = batch_data
+            for batch_data, batch_idx in dataloader:
+                X_batch, W_batch, M_batch, Ys_batch, Ls_batch = batch_data
 
                 # compute L
-                L = torch.ones_like(Ls[0], dtype=self.dtype, device=Ls[0].device)
-                for l_mat in Ls:
+                L = torch.ones_like(
+                    Ls_batch[0], dtype=self.dtype, device=Ls_batch[0].device
+                )
+                for l_mat in Ls_batch:
                     L *= l_mat
 
                 if y is not None:
                     if self.flexible_label_matrix:
-                        YB = self._compute_YB(Ys, Bs, L)
-                        Ys = [
+                        YB = self._compute_YB(Ys_batch, Bs, Ls_batch)
+                        Ys_batch = [
                             self._update_Y(Y=Y, W=W, B=B, YB=YB, L=L)
-                            for Y, B in zip(Ys, Bs)
+                            for Y, B in zip(Ys_batch, Bs)
                         ]
 
-                    YB = self._compute_YB(Ys, Bs, L)
-                    W = self._update_W(X=X, W=W, H=H, YB=YB, M=M, L=L)
+                    YB = self._compute_YB(Ys_batch, Bs, Ls_batch)
+                    W_batch = self._update_W(
+                        X=X_batch, W=W_batch, H=H, YB=YB, M=M_batch, L=Ls_batch
+                    )
                 else:
                     # if is unsupervised, only update W using X
-                    numerator = X @ H.T
-                    denominator = W @ H @ H.T
-                    W *= numerator / torch.clamp(denominator, min=self.eps)
+                    numerator = X_batch @ H.T
+                    denominator = W_batch @ H @ H.T
+                    W_batch *= numerator / torch.clamp(denominator, min=self.eps)
 
-        matrices = transform_dataset.get_all_matrices()
+                dataset.update(indices=batch_idx, W=W_batch, Ys=Ys_batch)
+
+        X, W, M, Ys, Ls = dataset.get_all_matrices()
         if y is not None:
-            Ys = [Y.cpu().numpy() for Y in matrices["Ys"]]
-            return matrices["W"].cpu().numpy(), Ys
+            Ys = [Y.numpy() for Y in Ys]
+            return W.numpy(), Ys
         else:
-            return matrices["W"].cpu().numpy()
+            return W.numpy()
 
-    def fit_transform(self, X, y):
+    def fit_transform(
+        self, X: TensorLike, y: Dict[str, Iterable[str]]
+    ) -> Tuple[np.ndarray, List[np.ndarray]]:
         """Fit and transform the data using multiple NMF methods."""
         return self.fit(X, y).transform(X, y)
 
-    def reconstruct(self):
+    def reconstruct(self) -> np.ndarray:
         self._check_parameters(["W", "H"])
         return self.W @ self.H
 
-    def get_components(self):
-        L = np.ones_like(self.Ls[0])
-        for l_mat in self.Ls:
-            L *= l_mat
-
-        matrices = {
-            "W": deepcopy(self.W),
-            "H": deepcopy(self.H),
-            "M": deepcopy(self.M),
-            "L": deepcopy(L),
-            "Bs": deepcopy(self.Bs),
-            "Ys": deepcopy(self.Ys),
-        }
-        return matrices
-
-    def predict(self, X):
+    def predict(self, X: TensorLike) -> Dict[str, List[str]]:
         # Ensure the model has been fitted and required parameters are available
         self._check_parameters(["H", "Bs", "ref_Y"])
 
@@ -276,6 +312,17 @@ class UnifiedSummitNMF(SummitNMFBase):
             for cov_name, labels in zip(self.cov_names, predicted_labels)
         }
         return predicted_labels
+
+    def get_components(self) -> Dict[str, np.ndarray]:
+        matrices = {
+            "W": deepcopy(self.W),
+            "H": deepcopy(self.H),
+            "M": deepcopy(self.M),
+            "L": deepcopy(self.L),
+            "Bs": deepcopy(self.Bs),
+            "Ys": deepcopy(self.Ys),
+        }
+        return matrices
 
     def _check_parameters(self, parameters) -> None:
         missing_params = [param for param in parameters if not hasattr(self, param)]

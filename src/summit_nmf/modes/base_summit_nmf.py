@@ -24,7 +24,8 @@ class SummitNMFBase(ABC):
         verbose: bool,
         preload: bool,
         dtype: torch.dtype,
-        stratify_labels: Optional[Iterable[Union[str, int]]],
+        shuffle: bool,
+        num_workers: int,
     ):
         self.n_components = n_components
         self.lam = lam
@@ -39,7 +40,8 @@ class SummitNMFBase(ABC):
         self.verbose = verbose
         self.preload = preload
         self.dtype = dtype
-        self.stratify_labels = stratify_labels
+        self.shuffle = shuffle
+        self.num_workers = num_workers
 
     @abstractmethod
     def fit(self, X: TensorLike, y: Dict[str, Iterable[str]], **kwargs) -> None:
