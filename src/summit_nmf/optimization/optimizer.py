@@ -27,7 +27,6 @@ class Optimizer:
         random_state: int = None,
         eps: float = 1e-10,
         tol: float = 1e-4,
-        preload: bool = False,
         dtype: torch.dtype = torch.float32,
         shuffle: bool = True,
         num_workers: int = 0,
@@ -43,7 +42,6 @@ class Optimizer:
         self.eps = eps
         self.tol = tol
         self.device = device
-        self.preload = preload
         self.dtype = dtype
         self.shuffle = shuffle
         self.num_workers = num_workers
@@ -59,7 +57,6 @@ class Optimizer:
             "eps": self.eps,
             "tol": self.tol,
             "device": self.device,
-            "preload": self.preload,
             "dtype": self.dtype,
             "shuffle": self.shuffle,
             "num_workers": self.num_workers,
@@ -110,7 +107,6 @@ class UOptimizer:
         random_state: int = None,
         eps: float = 1e-10,
         tol: float = 1e-4,
-        preload: bool = False,
         dtype: torch.dtype = torch.float32,
         shuffle: bool = True,
         num_workers: int = 0,
@@ -125,7 +121,6 @@ class UOptimizer:
         self.random_state = random_state
         self.eps = eps
         self.tol = tol
-        self.preload = preload
         self.device = device
         self.dtype = dtype
         self.shuffle = shuffle
@@ -146,10 +141,11 @@ class UOptimizer:
                 "class_imbalance": self.class_imbalance,
                 "eps": self.eps,
                 "device": self.device,
-                "preload": self.preload,
                 "dtype": self.dtype,
                 "random_state": self.random_state,
                 "tol": self.tol,
+                "shuffle": self.shuffle,
+                "num_workers": self.num_workers,
             }
 
             kf = KFold(
@@ -211,10 +207,11 @@ class UOptimizer:
             "max_iter": self.max_iter,
             "eps": self.eps,
             "device": self.device,
-            "preload": self.preload,
             "dtype": self.dtype,
             "random_state": self.random_state,
             "tol": self.tol,
+            "shuffle": self.shuffle,
+            "num_workers": self.num_workers,
         }
         return best_params
 
@@ -233,7 +230,6 @@ class SOptimizer:
         random_state: int = None,
         eps: float = 1e-10,
         tol: float = 1e-4,
-        preload: bool = False,
         dtype: torch.dtype = torch.float32,
         shuffle: bool = True,
         num_workers: int = 0,
@@ -250,7 +246,6 @@ class SOptimizer:
         self.tol = tol
         self.device = device
         self.dtype = dtype
-        self.preload = preload
         self.shuffle = shuffle
         self.num_workers = num_workers
 
@@ -288,7 +283,6 @@ class SOptimizer:
                 "batch_size": self.batch_size,
                 "eps": self.eps,
                 "device": self.device,
-                "preload": self.preload,
                 "dtype": self.dtype,
                 "random_state": self.random_state,
                 "tol": self.tol,
@@ -362,7 +356,6 @@ class SOptimizer:
             "max_iter": self.max_iter,
             "eps": self.eps,
             "device": self.device,
-            "preload": self.preload,
             "dtype": self.dtype,
             "random_state": self.random_state,
             "tol": self.tol,

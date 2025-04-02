@@ -23,7 +23,6 @@ class SummitNMF:
         eps: float = 1e-10,
         tol: float = 1e-4,
         verbose: bool = False,
-        preload: bool = False,
         dtype: torch.dtype = torch.float32,
         shuffle: bool = True,
         num_workers: int = 0,
@@ -54,7 +53,6 @@ class SummitNMF:
             eps (float): Small constant to avoid division by zero. Default is 1e-10.
             tol (float): Tolerance for convergence. Default is 1e-4.
             verbose (bool): Whether to print verbose output during training. Default is False.
-            preload (bool): Whether to preload data into memory. Default is False.
             dtype (torch.dtype): Data type for computations. Default is torch.float32.
             shuffle (bool): Whether to shuffle data during training. Default is True.
             num_workers (int): Number of workers for data loading. Default is 0.
@@ -81,7 +79,6 @@ class SummitNMF:
                 eps,
                 tol,
                 verbose,
-                preload,
                 dtype,
                 shuffle,
                 num_workers,
@@ -99,14 +96,13 @@ class SummitNMF:
                 eps,
                 tol,
                 verbose,
-                preload,
                 dtype,
                 shuffle,
                 num_workers,
             )
         elif model_type in ["fast_seperated", "fs"]:
-            UserWarning(
-                "Using FastSeparatedSummitNMF, please make sure the entire dataset can be loaded into device's memory. The following parameters won't be used: batch_size, preload, shuffle, and num_works."
+            print(
+                "Using FastSeparatedSummitNMF, please make sure the entire dataset can be loaded into device's memory. The following parameters won't be used: batch_size, shuffle, and num_works."
             )
 
             return FastSeparatedSummitNMF(
@@ -122,14 +118,13 @@ class SummitNMF:
                 eps,
                 tol,
                 verbose,
-                preload,
                 dtype,
                 shuffle,
                 num_workers,
             )
         elif model_type in ["fast_unified", "fu"]:
-            UserWarning(
-                "Using FastSeparatedSummitNMF, please make sure the entire dataset can be loaded into device's memory. The following parameters won't be used: batch_size, preload, shuffle, and num_works."
+            print(
+                "Using FastSeparatedSummitNMF, please make sure the entire dataset can be loaded into device's memory. The following parameters won't be used: batch_size, shuffle, and num_works."
             )
 
             return FastUnifiedSummitNMF(
@@ -144,7 +139,6 @@ class SummitNMF:
                 eps,
                 tol,
                 verbose,
-                preload,
                 dtype,
                 shuffle,
                 num_workers,

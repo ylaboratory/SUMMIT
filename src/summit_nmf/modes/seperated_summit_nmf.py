@@ -9,7 +9,7 @@ from typing import Iterable, Dict, List, Union, Optional, Tuple
 
 from summit_nmf.modes.base_summit_nmf import SummitNMFBase
 from summit_nmf.utils.data_preprocess import DataPreprocessor
-from summit_nmf.utils.dataset import preload_dataset, swap_dataset
+from summit_nmf.utils.dataset import hybrid_dataset
 
 TensorLike = Union[np.ndarray, torch.Tensor]
 
@@ -29,7 +29,6 @@ class SeparatedSummitNMF(SummitNMFBase):
         eps: float = 1e-10,
         tol: float = 1e-4,
         verbose: bool = False,
-        preload: bool = False,
         dtype: torch.dtype = torch.float32,
         shuffle: bool = True,
         num_workers: int = 0,
@@ -47,7 +46,6 @@ class SeparatedSummitNMF(SummitNMFBase):
             eps,
             tol,
             verbose,
-            preload,
             dtype,
             shuffle,
             num_workers,
@@ -69,11 +67,7 @@ class SeparatedSummitNMF(SummitNMFBase):
         H = H.to(self.device)
         Bs = [B.to(self.device) for B in Bs]
 
-        dataset = None
-        if self.preload:
-            dataset = preload_dataset(X=X, Ys=Ys, W=W, M=M, Ls=Ls, device=self.device)
-        else:
-            dataset = swap_dataset(X=X, Ys=Ys, W=W, M=M, Ls=Ls, device=self.device)
+        dataset = hybrid_dataset(X=X, Ys=Ys, W=W, M=M, Ls=Ls, device=self.device)
 
         self.ref_Y_encoders = self.dp.ref_Y_encoders
         self.Y_label_encoded_order = {
@@ -92,7 +86,7 @@ class SeparatedSummitNMF(SummitNMFBase):
             batch_size=self.batch_size,
             shuffle=self.shuffle,
             num_workers=self.num_workers,
-            pin_memory=False if self.preload else True,
+            pin_memory=True,
         )
 
         self.loss_history_ = {
@@ -112,15 +106,7 @@ class SeparatedSummitNMF(SummitNMFBase):
         for iter_ in progress_bar:
             for batch_data, batch_idx in dataloader:
                 X_batch, W_batch, M_batch, Ys_batch, Ls_batch = batch_data
-
-                # if dataset is not preloaded, move data to device
-                # this setting is also related to the pin_memory
-                if not self.preload:
-                    X_batch = X_batch.to(self.device, non_blocking=True)
-                    W_batch = W_batch.to(self.device, non_blocking=True)
-                    M_batch = M_batch.to(self.device, non_blocking=True)
-                    Ys_batch = [Y.to(self.device, non_blocking=True) for Y in Ys_batch]
-                    Ls_batch = [L.to(self.device, non_blocking=True) for L in Ls_batch]
+                X_batch = X_batch.to(self.device, non_blocking=True)
 
                 # update H
                 H = self._update_H(X=X_batch, W=W_batch, H=H, M=M_batch)
@@ -219,18 +205,14 @@ class SeparatedSummitNMF(SummitNMFBase):
         else:
             X, Ys, W, M, Ls = self.dp.transform(X, y)
 
-        dataset = None
-        if self.preload:
-            dataset = preload_dataset(X=X, Ys=Ys, W=W, M=M, Ls=Ls, device=self.device)
-        else:
-            dataset = swap_dataset(X=X, Ys=Ys, W=W, M=M, Ls=Ls, device=self.device)
+        dataset = hybrid_dataset(X=X, Ys=Ys, W=W, M=M, Ls=Ls, device=self.device)
 
         dataloader = DataLoader(
             dataset,
             batch_size=self.batch_size,
             shuffle=self.shuffle,
             num_workers=self.num_workers,
-            pin_memory=False if self.preload else True,
+            pin_memory=True,
         )
 
         progress_bar = (
@@ -241,15 +223,7 @@ class SeparatedSummitNMF(SummitNMFBase):
         for iter_ in progress_bar:
             for batch_data, batch_idx in dataloader:
                 X_batch, W_batch, M_batch, Ys_batch, Ls_batch = batch_data
-
-                # if dataset is not preloaded, move data to device
-                # this setting is also related to the pin_memory
-                if not self.preload:
-                    X_batch = X_batch.to(self.device, non_blocking=True)
-                    W_batch = W_batch.to(self.device, non_blocking=True)
-                    M_batch = M_batch.to(self.device, non_blocking=True)
-                    Ys_batch = [Y.to(self.device, non_blocking=True) for Y in Ys_batch]
-                    Ls_batch = [L.to(self.device, non_blocking=True) for L in Ls_batch]
+                X_batch = X_batch.to(self.device, non_blocking=True)
 
                 if y is not None:
                     if self.flexible_label_matrix:
@@ -410,7 +384,6 @@ class SeparatedSummitNMF(SummitNMFBase):
             f"  eps={self.eps},\n"
             f"  tol={self.tol},\n"
             f"  verbose={self.verbose},\n"
-            f"  preload={self.preload},\n"
             f"  dtype={self.dtype},\n"
             f"  shuffle={self.shuffle},\n"
             f"  num_workers={self.num_workers}\n"
