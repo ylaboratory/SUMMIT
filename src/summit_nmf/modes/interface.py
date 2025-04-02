@@ -10,7 +10,7 @@ from summit_nmf.modes.fast_unified_summit_nmf import FastUnifiedSummitNMF
 class SummitNMF:
     @staticmethod
     def create_summit_nmf(
-        model_type: str = "seperated",
+        model_type: str = "fast_seperated",
         n_components: int = 25,
         lam: float = 1,
         alpha: Iterable[float] = None,

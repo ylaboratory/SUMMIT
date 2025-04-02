@@ -258,7 +258,7 @@ class SeparatedSummitNMF(SummitNMFBase):
                             for Y, B, L in zip(Ys_batch, Bs, Ls_batch)
                         ]
 
-                    W = self._update_W(
+                    W_batch = self._update_W(
                         X=X_batch,
                         Ys=Ys_batch,
                         W=W_batch,

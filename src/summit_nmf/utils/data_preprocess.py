@@ -108,14 +108,14 @@ class DataPreprocessor:
     ):
         # Process X and create mask M
         X, M = self._process_X(X)
-        n_samples, n_features = X.shape
+        n_samples, _ = X.shape
 
         # create W and H
         median_X = torch.median(X)
         W = torch.rand(n_samples, self.n_components, dtype=self.dtype) * median_X
 
         if Y is not None:
-            Ys, Ls = self._process_test_Y(Y)
+            Ys, Ls = self._process_test_Y(Y, n_samples)
             return X, Ys, W, M, Ls
         else:
             return X, W, M
@@ -163,7 +163,7 @@ class DataPreprocessor:
         return Ys, Ls
 
     def _process_test_Y(
-        self, Y: Dict[str, Iterable[Any]]
+        self, Y: Dict[str, Iterable[Any]], n_samples: int
     ) -> Tuple[list[torch.Tensor], list[torch.Tensor]]:
         Ys = []
         Ls = []
@@ -181,7 +181,7 @@ class DataPreprocessor:
 
             encoded_labels = encoder.transform(valid_labels)
             n_labels = len(encoder.classes_)
-            Y_mat = torch.zeros(self.n_samples, n_labels, dtype=self.dtype)
+            Y_mat = torch.zeros(n_samples, n_labels, dtype=self.dtype)
             for sample_idx, label in enumerate(labels):
                 if not is_missing(label):
                     Y_mat[sample_idx, encoded_labels[sample_idx]] = 1

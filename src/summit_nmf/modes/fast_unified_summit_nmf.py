@@ -200,10 +200,10 @@ class FastUnifiedSummitNMF(SummitNMFBase):
                 W *= numerator / torch.clamp(denominator, min=self.eps)
 
         if y is not None:
-            Ys = [Y.numpy() for Y in Ys]
-            return W.numpy(), Ys
+            Ys = [Y.cpu().numpy() for Y in Ys]
+            return W.cpu().numpy(), Ys
         else:
-            return W.numpy()
+            return W.cpu().numpy()
 
     def fit_transform(
         self, X: TensorLike, y: Dict[str, Iterable[str]]
