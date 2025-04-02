@@ -46,4 +46,14 @@ The table below lists the implemented classes associated with these two models. 
 
 ## 3. More examples and analysis
 
+Check the following repository or links for more details on the design and usage of **SUMMIT-NMF**:  
+
+- SUMMIT-NMF analysis repository
+  - Optimization  
+  - Function and parameter overview  
+  - Examples  
+    - Simulation  
+    - Mutational Signatures  
+    - Perturb-seq
+
 ## 4. Citation
