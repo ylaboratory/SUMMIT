@@ -1,19 +1,22 @@
 <div style="display: flex; align-items: center;">
-    <img src="./imgs/MINMF.svg" alt="SUMMIT-NMF" width="55" height="55" style="margin-right: 10px;">
-    <h1 style="margin: 0; font-size: 2rem; line-height: 55px;">SUMMIT-NMF</h1>
+    <img src="./imgs/MINMF.svg" alt="SUMMIT-NMF" width="80" height="80">
 </div>
+
+# SUMMIT-NMF
+
 **SUMMIT-NMF: Semi-supervised Unified Multi-target Integration Technique using NMF**
 
 
 **Table of Conents:**
 
-- [1. Installation](#1-installation)
-- [2. Usage](#2-usage)
-  - [Model types](#model-types)
-  - [Optimization](#optimization)
-  - [Training a model](#training-a-model)
-- [3. More examples and analysis](#3-more-examples-and-analysis)
-- [4. Citation](#4-citation)
+- [SUMMIT-NMF](#summit-nmf)
+  - [1. Installation](#1-installation)
+  - [2. Usage](#2-usage)
+    - [Model types](#model-types)
+    - [Optimization](#optimization)
+    - [Training a model](#training-a-model)
+  - [3. More examples and analysis](#3-more-examples-and-analysis)
+  - [4. Citation](#4-citation)
 
 ## 1. Installation
 
