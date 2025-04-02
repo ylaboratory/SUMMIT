@@ -7,8 +7,6 @@
 **SUMMIT-NMF: Semi-supervised Unified Multi-target Integration Technique using NMF**
 
 
-
-
 **Table of Conents:**
 
 - [SUMMIT-NMF](#summit-nmf)
@@ -26,12 +24,21 @@
 
 ### Model types
 
-| class name | model_type | description |
+SUMMIT-NMF includes two primary models: `UnionSummitNMF` and `SeparatedSummitNMF`.  
+
+- `UnionSummitNMF` represents each sample embedding as a linear combination of the sum of all associated label embeddings.  
+- `SeparatedSummitNMF` enforces each sample embedding to be closer to its own label embeddings.  
+
+Each approach has its own advantages. For more details, please refer to the paper.  
+
+The table below lists the implemented classes associated with these two models. Classes prefixed with **Fast** preload the entire dataset onto the device, which is beneficial for small datasets and most use cases. However, for large datasets that cannot fit into device memory, users can opt for the standard classes, which support mini-batch processing and data swapping between the CPU and the device. While this allows handling larger datasets, it significantly increases computation time due to repeated data retrieval and updates.
+
+| Class name | Model type | Class difference description |
 | --- | --- | --- |
-| `UnifiedSummitNMF` | `unified` or `u` ||
-| `SeperatedSummitNMF` | `seperated` or `s` ||
-| `FastUnifiedSummitNMF` | `fast_unified` or `fu` ||
-| `FastSeperatedSummitNMF` | `fast_seperated` or `fs` ||
+| `UnifiedSummitNMF` | `"unified"` or `"u"` | Supports large datasets and mini-batch processing. |
+| `SeperatedSummitNMF` | `"seperated"` or `"s"` | Supports large datasets and mini-batch processing. |
+| `FastUnifiedSummitNMF` | `"fast_unified"` or `"fu"` | The model loads the entire dataset onto the device, requiring sufficient device memory. Mini-batch processing is not supported. |
+| `FastSeperatedSummitNMF` | `"fast_seperated"` or `"fs"` | The model loads the entire dataset onto the device, requiring sufficient device memory. Mini-batch processing is not supported. |
 
 ### Optimization
 
