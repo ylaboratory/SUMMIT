@@ -66,8 +66,8 @@ class SeparatedSummitNMF(SummitNMFBase):
             dtype=self.dtype,
         )
         X, Ys, W, H, Bs, M, Ls = self.dp.fit(X, y, W, H, Bs)
-        H = H.to(self.device, non_blocking=True)
-        Bs = [B.to(self.device, non_blocking=True) for B in Bs]
+        H = H.to(self.device)
+        Bs = [B.to(self.device) for B in Bs]
 
         dataset = None
         if self.preload:
@@ -75,9 +75,13 @@ class SeparatedSummitNMF(SummitNMFBase):
         else:
             dataset = swap_dataset(X=X, Ys=Ys, W=W, M=M, Ls=Ls, device=self.device)
 
-        self.ref_Y = self.dp.ref_Y
-        self.n_covariates = len(self.ref_Y)
-        self.cov_names = self.ref_Y.keys()
+        self.ref_Y_encoders = self.dp.ref_Y_encoders
+        self.Y_label_encoded_order = {
+            cov_name: self.ref_Y_encoders[cov_name].classes_
+            for cov_name in self.ref_Y_encoders.keys()
+        }
+        self.n_covariates = len(self.ref_Y_encoders)
+        self.cov_names = list(self.ref_Y_encoders.keys())
         self.alpha = self._check_alpha(self.alpha)
         self.batch_size = (
             self.batch_size if self.batch_size is not None else len(dataset)
@@ -88,7 +92,7 @@ class SeparatedSummitNMF(SummitNMFBase):
             batch_size=self.batch_size,
             shuffle=self.shuffle,
             num_workers=self.num_workers,
-            pin_memory=True,
+            pin_memory=False if self.preload else True,
         )
 
         self.loss_history_ = {
@@ -108,6 +112,15 @@ class SeparatedSummitNMF(SummitNMFBase):
         for iter_ in progress_bar:
             for batch_data, batch_idx in dataloader:
                 X_batch, W_batch, M_batch, Ys_batch, Ls_batch = batch_data
+
+                # if dataset is not preloaded, move data to device
+                # this setting is also related to the pin_memory
+                if not self.preload:
+                    X_batch = X_batch.to(self.device, non_blocking=True)
+                    W_batch = W_batch.to(self.device, non_blocking=True)
+                    M_batch = M_batch.to(self.device, non_blocking=True)
+                    Ys_batch = [Y.to(self.device, non_blocking=True) for Y in Ys_batch]
+                    Ls_batch = [L.to(self.device, non_blocking=True) for L in Ls_batch]
 
                 # update H
                 H = self._update_H(X=X_batch, W=W_batch, H=H, M=M_batch)
@@ -150,7 +163,7 @@ class SeparatedSummitNMF(SummitNMFBase):
             self.loss_history_["reconstruction"].append(reconstruction_loss)
             self.loss_history_["harmonic"].append(harmonic_loss)
             for i, loss in enumerate(ind_harmonic_loss):
-                self.loss_history_[f"harmonic_{self.n_cov_names[i]}"].append(loss)
+                self.loss_history_[f"harmonic_{self.cov_names[i]}"].append(loss)
             self.loss_history_["total"].append(total_loss)
 
             if self.verbose:
@@ -171,11 +184,12 @@ class SeparatedSummitNMF(SummitNMFBase):
 
         X, W, M, Ys, Ls = dataset.get_all_matrices()
         self.W = W.numpy()
-        self.H = H.numpy()
+        self.H = H.cpu().numpy()
         self.M = M.numpy()
-        self.Bs = [B.numpy() for B in Bs]
+        self.Bs = [B.cpu().numpy() for B in Bs]
         self.Ys = [Y.numpy() for Y in Ys]
         self.Ls = [L.numpy() for L in Ls]
+        return self
 
     def fit_transform(
         self, X: TensorLike, y: Dict[str, Iterable[str | int]]
@@ -188,14 +202,11 @@ class SeparatedSummitNMF(SummitNMFBase):
         y: Dict[str, Iterable[str | int]] = None,
         max_iter: Optional[int] = None,
     ):
-        self._check_parameters(["H", "ref_Y"])
+        self._check_parameters(["H", "ref_Y_encoders"])
         max_iter = self.max_iter if max_iter is None else max_iter
 
-        H = torch.tensor(self.H, dtype=self.dtype).to(self.device, non_blocking=True)
-        Bs = [
-            torch.tensor(B, dtype=self.dtype).to(self.device, non_blocking=True)
-            for B in self.Bs
-        ]
+        H = torch.tensor(self.H, dtype=self.dtype).to(self.device)
+        Bs = [torch.tensor(B, dtype=self.dtype).to(self.device) for B in self.Bs]
 
         if y is None:
             X, W, M = self.dp.transform(X)
@@ -219,7 +230,7 @@ class SeparatedSummitNMF(SummitNMFBase):
             batch_size=self.batch_size,
             shuffle=self.shuffle,
             num_workers=self.num_workers,
-            pin_memory=True,
+            pin_memory=False if self.preload else True,
         )
 
         progress_bar = (
@@ -230,6 +241,15 @@ class SeparatedSummitNMF(SummitNMFBase):
         for iter_ in progress_bar:
             for batch_data, batch_idx in dataloader:
                 X_batch, W_batch, M_batch, Ys_batch, Ls_batch = batch_data
+
+                # if dataset is not preloaded, move data to device
+                # this setting is also related to the pin_memory
+                if not self.preload:
+                    X_batch = X_batch.to(self.device, non_blocking=True)
+                    W_batch = W_batch.to(self.device, non_blocking=True)
+                    M_batch = M_batch.to(self.device, non_blocking=True)
+                    Ys_batch = [Y.to(self.device, non_blocking=True) for Y in Ys_batch]
+                    Ls_batch = [L.to(self.device, non_blocking=True) for L in Ls_batch]
 
                 if y is not None:
                     if self.flexible_label_matrix:
@@ -267,7 +287,7 @@ class SeparatedSummitNMF(SummitNMFBase):
         return self.W @ self.H
 
     def predict(self, X: TensorLike) -> Dict[str, List[str]]:
-        self._check_parameters(["H", "Bs", "ref_Y"])
+        self._check_parameters(["H", "Bs", "ref_Y_encoders"])
 
         # Transform the input data to the latent space
         W_pred = self.transform(X)
@@ -275,14 +295,15 @@ class SeparatedSummitNMF(SummitNMFBase):
         # Calculate the distance between W_pred and each Bs[c] separately
         predicted_labels = {}
         for cov_name, B in zip(self.cov_names, self.Bs):
-            label_mapping = self.ref_Y[cov_name]
+            label_encoder = self.ref_Y_encoders[cov_name]
             # Compute the distance between W_pred and each row of B
             D = np.linalg.norm(W_pred[:, np.newaxis, :] - B[np.newaxis, :, :], axis=2)
             predicted_indices = np.argmin(D, axis=1)
 
-            # Map the indices back to their original labels
-            labels = np.array([label for label, idx in label_mapping.items()])
-            predicted_labels[cov_name] = labels[predicted_indices]
+            # Use the label encoder to inverse transform the indices back to labels
+            predicted_labels[cov_name] = label_encoder.inverse_transform(
+                predicted_indices
+            )
 
         return predicted_labels
 
@@ -300,7 +321,7 @@ class SeparatedSummitNMF(SummitNMFBase):
     def _check_alpha(self, alpha):
         """Check if alpha is a list of floats."""
         if alpha is None:
-            alpha = [1.0 / self.n_covariates]
+            alpha = [1.0 / self.n_covariates] * self.n_covariates
             return alpha
 
         if not isinstance(alpha, list):
@@ -373,3 +394,28 @@ class SeparatedSummitNMF(SummitNMFBase):
         numerator = (L**2 * W) @ B.T
         denominator = (L**2 * (Y @ B)) @ B.T
         return Y * (numerator / torch.clamp(denominator, min=self.eps))
+
+    def __str__(self):
+        return (
+            "SeparatedSummitNMF(\n"
+            f"  n_components={self.n_components},\n"
+            f"  lam={self.lam},\n"
+            f"  alpha={self.alpha},\n"
+            f"  flexible_label_matrix={self.flexible_label_matrix},\n"
+            f"  class_imbalance={self.class_imbalance},\n"
+            f"  batch_size={self.batch_size},\n"
+            f"  max_iter={self.max_iter},\n"
+            f"  device={self.device},\n"
+            f"  random_state={self.random_state},\n"
+            f"  eps={self.eps},\n"
+            f"  tol={self.tol},\n"
+            f"  verbose={self.verbose},\n"
+            f"  preload={self.preload},\n"
+            f"  dtype={self.dtype},\n"
+            f"  shuffle={self.shuffle},\n"
+            f"  num_workers={self.num_workers}\n"
+            ")"
+        )
+
+    def __repr__(self):
+        return self.__str__()

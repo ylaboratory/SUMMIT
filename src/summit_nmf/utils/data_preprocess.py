@@ -2,6 +2,7 @@ import torch
 import numpy as np
 import pandas as pd
 from typing import Dict, Iterable, Optional, Any, Union, Tuple
+from sklearn.preprocessing import LabelEncoder
 
 TensorLike = Union[np.ndarray, torch.Tensor]
 
@@ -31,6 +32,8 @@ class DataPreprocessor:
         if random_state is not None:
             self.rng.manual_seed(random_state)
 
+        self.ref_Y_encoders = {}  # Store label encoders for each covariate
+
     def fit(
         self,
         X: TensorLike,
@@ -48,24 +51,28 @@ class DataPreprocessor:
         W = (
             torch.as_tensor(W, dtype=self.dtype)
             if W is not None
-            else torch.rand(self.n_samples, self.n_components, dtype=self.dtype)
+            else torch.rand(
+                self.n_samples, self.n_components, dtype=self.dtype, generator=self.rng
+            )
             * median_X
         )
         H = (
             torch.as_tensor(H, dtype=self.dtype)
             if H is not None
-            else torch.rand(self.n_components, self.n_features, dtype=self.dtype)
+            else torch.rand(
+                self.n_components, self.n_features, dtype=self.dtype, generator=self.rng
+            )
             * median_X
         )
 
         # Validate shapes
-        assert self.W.shape == (self.n_samples, self.n_components), "W shape mismatch"
-        assert self.H.shape == (self.n_components, self.n_features), "H shape mismatch"
+        assert W.shape == (self.n_samples, self.n_components), "W shape mismatch"
+        assert H.shape == (self.n_components, self.n_features), "H shape mismatch"
 
         # Ensure non-negative property
-        if torch.any(self.W < 0):
+        if torch.any(W < 0):
             raise ValueError("W contains negative values")
-        if torch.any(self.H < 0):
+        if torch.any(H < 0):
             raise ValueError("H contains negative values")
 
         # Process Y and create mask L
@@ -77,8 +84,13 @@ class DataPreprocessor:
             Bs = [torch.as_tensor(B, dtype=self.dtype) for B in Bs]
             assert len(Bs) == len(Ys), "Bs must match number of covariates"
         else:
-            self.Bs = [
-                torch.rand(Ys_i.shape[1], self.n_components, dtype=self.dtype)
+            Bs = [
+                torch.rand(
+                    Ys_i.shape[1],
+                    self.n_components,
+                    dtype=self.dtype,
+                    generator=self.rng,
+                )
                 for Ys_i in Ys
             ]
 
@@ -121,6 +133,65 @@ class DataPreprocessor:
             raise ValueError("X contains negative values")
         return X, M
 
+    def _process_Y(
+        self, Y: Dict[str, Iterable[Any]]
+    ) -> Tuple[list[torch.Tensor], list[torch.Tensor]]:
+        Ys = []
+        Ls = []
+
+        for cov_name in self.covariate_order:
+            labels = Y[cov_name]
+
+            # Use LabelEncoder to normalize labels
+            encoder = LabelEncoder()
+            valid_labels = [label for label in labels if not is_missing(label)]
+            encoder.fit(valid_labels)
+            self.ref_Y_encoders[cov_name] = encoder  # Store encoder for reference
+
+            # Transform labels into one-hot encoded matrix
+            encoded_labels = encoder.transform(valid_labels)
+            n_labels = len(encoder.classes_)
+            Y_mat = torch.zeros(self.n_samples, n_labels, dtype=self.dtype)
+            for sample_idx, label in enumerate(labels):
+                if not is_missing(label):
+                    Y_mat[sample_idx, encoded_labels[sample_idx]] = 1
+
+            L = self._create_mask(Y_mat)
+            Ys.append(Y_mat)
+            Ls.append(L)
+
+        return Ys, Ls
+
+    def _process_test_Y(
+        self, Y: Dict[str, Iterable[Any]]
+    ) -> Tuple[list[torch.Tensor], list[torch.Tensor]]:
+        Ys = []
+        Ls = []
+
+        for cov_name in self.covariate_order:
+            if cov_name not in Y:
+                raise ValueError(f"Covariate '{cov_name}' missing in test set")
+            labels = Y[cov_name]
+
+            # Use stored LabelEncoder to transform test labels
+            encoder = self.ref_Y_encoders[cov_name]
+            valid_labels = [label for label in labels if not is_missing(label)]
+            if new_labels := set(valid_labels) - set(encoder.classes_):
+                raise ValueError(f"New labels {new_labels} in test set '{cov_name}'")
+
+            encoded_labels = encoder.transform(valid_labels)
+            n_labels = len(encoder.classes_)
+            Y_mat = torch.zeros(self.n_samples, n_labels, dtype=self.dtype)
+            for sample_idx, label in enumerate(labels):
+                if not is_missing(label):
+                    Y_mat[sample_idx, encoded_labels[sample_idx]] = 1
+
+            L = self._create_mask(Y_mat)
+            Ys.append(Y_mat)
+            Ls.append(L)
+
+        return Ys, Ls
+
     def _create_mask(self, Y):
         n_sample, n_classes = Y.shape
         L = torch.ones((n_sample, self.n_components), dtype=self.dtype)
@@ -144,112 +215,3 @@ class DataPreprocessor:
             L *= sample_weights  # Broadcast multiplication across components
 
         return L
-
-    def _process_Y(
-        self, Y: Dict[str, Iterable[Any]]
-    ) -> Tuple[list[torch.Tensor], list[torch.Tensor]]:
-        Ys = []
-        Ls = []
-        self.ref_Y = {}
-
-        for cov_name in self.covariate_order:
-            labels = Y[cov_name]
-            normalized_labels = []
-            invalid_labels = []
-
-            # Normalize labels and check for invalid labels
-            for label in labels:
-                if is_missing(label):
-                    continue
-                elif isinstance(
-                    label, (int, np.integer, torch.Tensor)
-                ) and not isinstance(label, bool):
-                    if isinstance(label, torch.Tensor):
-                        label = label.item()
-                    normalized_labels.append(str(int(label)))
-                elif isinstance(label, str):
-                    normalized_labels.append(label)
-                else:
-                    invalid_labels.append(label)
-            if invalid_labels:
-                raise ValueError(f"Invalid labels in '{cov_name}': {invalid_labels}")
-
-            unique_labels = sorted(set(normalized_labels))
-            label_map = {label: idx for idx, label in enumerate(unique_labels)}
-            n_labels = len(unique_labels)
-
-            # Create Y matrix
-            Y_mat = torch.zeros(self.n_samples, n_labels, dtype=self.dtype)
-            for sample_idx, label in enumerate(labels):
-                if not is_missing(label):
-                    if isinstance(label, torch.Tensor):
-                        label = label.item()
-                    label_str = (
-                        str(int(label))
-                        if isinstance(label, (int, np.integer))
-                        else label
-                    )
-                    Y_mat[sample_idx, label_map[label_str]] = 1
-            L = self._create_mask(Y_mat)
-
-            Ys.append(Y_mat)
-            Ls.append(L)
-            self.ref_Y[cov_name] = label_map
-
-        return Ys, Ls
-
-    def _process_test_Y(
-        self, Y: Dict[str, Iterable[Any]]
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
-        Ys = []
-        Ls = []
-
-        for cov_name in self.covariate_order:
-            if cov_name not in Y:
-                raise ValueError(f"Covariate '{cov_name}' missing in test set")
-            labels = Y[cov_name]
-            label_map = self.ref_Y[cov_name]
-            n_labels = len(label_map)
-            ref_labels = set(label_map.keys())
-            valid_test_labels = set()
-            invalid_labels = []
-
-            # Normalize labels and check for invalid labels
-            for label in labels:
-                if is_missing(label):
-                    continue
-                elif isinstance(
-                    label, (int, np.integer, torch.Tensor)
-                ) and not isinstance(label, bool):
-                    if isinstance(label, torch.Tensor):
-                        label = label.item()
-                    valid_test_labels.add(str(int(label)))
-                elif isinstance(label, str):
-                    valid_test_labels.add(label)
-                else:
-                    invalid_labels.append(label)
-            if new_labels := valid_test_labels - ref_labels:
-                raise ValueError(f"New labels {new_labels} in test set '{cov_name}'")
-            if invalid_labels:
-                raise ValueError(
-                    f"Invalid labels in test set '{cov_name}': {invalid_labels}"
-                )
-
-            # Create Y matrix
-            Y_mat = torch.zeros(self.n_samples, n_labels, dtype=self.dtype)
-            for sample_idx, label in enumerate(labels):
-                if not is_missing(label):
-                    if isinstance(label, torch.Tensor):
-                        label = label.item()
-                    label_str = (
-                        str(int(label))
-                        if isinstance(label, (int, np.integer))
-                        else label
-                    )
-                    if label_str in label_map:
-                        Y_mat[sample_idx, label_map[label_str]] = 1
-            L = self._create_mask(Y_mat)
-
-            Ys.append(Y_mat)
-            Ls.append(L)
-        return Ys, Ls

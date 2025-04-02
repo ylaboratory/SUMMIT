@@ -6,7 +6,9 @@ import torch
 from sklearn.metrics import f1_score
 from sklearn.model_selection import KFold
 from summit_nmf.modes.seperated_summit_nmf import SeparatedSummitNMF
+from summit_nmf.modes.fast_seperated_summit_nmf import FastSeparatedSummitNMF
 from summit_nmf.modes.unified_summit_nmf import UnifiedSummitNMF
+from summit_nmf.modes.fast_unified_summit_nmf import FastUnifiedSummitNMF
 from copy import deepcopy
 from typing import Dict, Union
 
@@ -14,23 +16,27 @@ from typing import Dict, Union
 class Optimizer:
     def __init__(
         self,
-        model_type,
-        max_iter=200,
-        flexible_label_matrix=False,
-        class_imbalance=False,
-        n_trials=50,
-        n_cv_splits=3,
-        random_state=None,
-        eps=1e-10,
-        tol=1e-4,
-        device=None,
-        preload=False,
-        dtype=torch.float32,
+        model_type: str,
+        n_trials: int = 50,
+        n_cv_splits: int = 3,
+        flexible_label_matrix: bool = False,
+        class_imbalance: bool = False,
+        batch_size: int = None,
+        max_iter: int = 200,
+        device: str = None,
+        random_state: int = None,
+        eps: float = 1e-10,
+        tol: float = 1e-4,
+        preload: bool = False,
+        dtype: torch.dtype = torch.float32,
+        shuffle: bool = True,
+        num_workers: int = 0,
     ):
         self.model_type = model_type
         self.max_iter = max_iter
         self.flexible_label_matrix = flexible_label_matrix
         self.class_imbalance = class_imbalance
+        self.batch_size = batch_size
         self.n_trials = n_trials
         self.n_cv_splits = n_cv_splits
         self.random_state = random_state
@@ -39,11 +45,14 @@ class Optimizer:
         self.device = device
         self.preload = preload
         self.dtype = dtype
+        self.shuffle = shuffle
+        self.num_workers = num_workers
 
         params = {
             "max_iter": self.max_iter,
             "flexible_label_matrix": self.flexible_label_matrix,
             "class_imbalance": self.class_imbalance,
+            "batch_size": self.batch_size,
             "n_trials": self.n_trials,
             "n_cv_splits": self.n_cv_splits,
             "random_state": self.random_state,
@@ -52,13 +61,29 @@ class Optimizer:
             "device": self.device,
             "preload": self.preload,
             "dtype": self.dtype,
+            "shuffle": self.shuffle,
+            "num_workers": self.num_workers,
         }
 
         # Initialize the appropriate optimizer based on the model type
-        if self.model_type == "Unified":
-            self.optimizer = UOptimizer(**params)
-        elif self.model_type == "Seperated":
-            self.optimizer = SOptimizer(**params)
+        if self.model_type in ["unified", "u"]:
+            self.optimizer = UOptimizer(model_class=UnifiedSummitNMF, **params)
+
+        elif self.model_type in ["seperated", "s"]:
+            self.optimizer = SOptimizer(model_class=SeparatedSummitNMF, **params)
+
+        elif self.model_type in ["fast_unified", "fu"]:
+            UserWarning(
+                "Using FastSeparatedSummitNMF, please make sure the dataset can be loaded into device's memory. The batch_size is set to the entire dataset."
+            )
+            self.optimizer = UOptimizer(model_class=FastUnifiedSummitNMF, **params)
+
+        elif self.model_type in ["fast_seperated", "fs"]:
+            UserWarning(
+                "Using FastSeparatedSummitNMF, please make sure the dataset can be loaded into device's memory. The batch_size is set to the entire dataset."
+            )
+            self.optimizer = SOptimizer(model_class=FastSeparatedSummitNMF, **params)
+
         else:
             raise ValueError(f"Unsupported model type: {self.model_type}")
 
@@ -74,27 +99,37 @@ class Optimizer:
 class UOptimizer:
     def __init__(
         self,
-        max_iter=200,
-        flexible_label_matrix=False,
-        class_imbalance=False,
+        model_class,
         n_trials=100,
         n_cv_splits=3,
-        random_state=None,
-        eps=1e-10,
-        tol=1e-4,
-        device=None,
-        dtype=torch.float32,
+        flexible_label_matrix: bool = False,
+        class_imbalance: bool = False,
+        batch_size: int = None,
+        max_iter: int = 200,
+        device: str = None,
+        random_state: int = None,
+        eps: float = 1e-10,
+        tol: float = 1e-4,
+        preload: bool = False,
+        dtype: torch.dtype = torch.float32,
+        shuffle: bool = True,
+        num_workers: int = 0,
     ):
+        self.model_class = model_class
         self.max_iter = max_iter
         self.flexible_label_matrix = flexible_label_matrix
         self.class_imbalance = class_imbalance
+        self.batch_size = batch_size
         self.n_trials = n_trials
         self.n_cv_splits = n_cv_splits
         self.random_state = random_state
         self.eps = eps
         self.tol = tol
+        self.preload = preload
         self.device = device
         self.dtype = dtype
+        self.shuffle = shuffle
+        self.num_workers = num_workers
 
     def search(self, X, y, n_components_range=(5, 50), lam_range=(1e-5, 1e0)):
         def objective(trial):
@@ -132,13 +167,13 @@ class UOptimizer:
 
                 null_params = deepcopy(params)
                 null_params["lam"] = 0
-                null_model = UnifiedSummitNMF(**null_params)
+                null_model = self.model_class(**null_params)
                 null_model.fit(X_train, y_train)
                 null_recon = np.linalg.norm(
                     X_test - null_model.transform(X_test) @ null_model.H, ord="fro"
                 )
 
-                model = UnifiedSummitNMF(**params)
+                model = self.model_class(**params)
                 model.fit(X_train, y_train)
 
                 y_pred = model.predict(X_test)
@@ -162,7 +197,7 @@ class UOptimizer:
         study = optuna.create_study(
             sampler=sampler,
             direction="maximize",
-            study_name="multi-covariates optimization (UHNMF)",
+            study_name="multi-covariates optimization (UnifiedSummitNMF)",
         )
         study.optimize(objective, n_trials=self.n_trials)
         self.study = study
@@ -187,20 +222,27 @@ class UOptimizer:
 class SOptimizer:
     def __init__(
         self,
-        max_iter=200,
-        flexible_label_matrix=False,
-        class_imbalance=False,
+        model_class,
         n_trials=100,
         n_cv_splits=3,
-        random_state=None,
-        eps=1e-10,
-        tol=1e-4,
-        device=None,
-        dtype=torch.float32,
+        flexible_label_matrix: bool = False,
+        class_imbalance: bool = False,
+        batch_size: int = None,
+        max_iter: int = 200,
+        device: str = None,
+        random_state: int = None,
+        eps: float = 1e-10,
+        tol: float = 1e-4,
+        preload: bool = False,
+        dtype: torch.dtype = torch.float32,
+        shuffle: bool = True,
+        num_workers: int = 0,
     ):
+        self.model_class = model_class
         self.max_iter = max_iter
         self.flexible_label_matrix = flexible_label_matrix
         self.class_imbalance = class_imbalance
+        self.batch_size = batch_size
         self.n_trials = n_trials
         self.n_cv_splits = n_cv_splits
         self.random_state = random_state
@@ -208,6 +250,9 @@ class SOptimizer:
         self.tol = tol
         self.device = device
         self.dtype = dtype
+        self.preload = preload
+        self.shuffle = shuffle
+        self.num_workers = num_workers
 
     def search(self, X, y, n_components_range=(5, 50), lam_range=(1e-5, 1e0)):
         def objective(trial):
@@ -240,12 +285,15 @@ class SOptimizer:
                 "max_iter": self.max_iter,
                 "flexible_label_matrix": self.flexible_label_matrix,
                 "class_imbalance": self.class_imbalance,
+                "batch_size": self.batch_size,
                 "eps": self.eps,
                 "device": self.device,
                 "preload": self.preload,
                 "dtype": self.dtype,
                 "random_state": self.random_state,
                 "tol": self.tol,
+                "shuffle": self.shuffle,
+                "num_workers": self.num_workers,
             }
 
             kf = KFold(
@@ -263,13 +311,13 @@ class SOptimizer:
 
                 null_params = deepcopy(params)
                 null_params["lam"] = 0
-                null_model = SeparatedSummitNMF(**null_params)
+                null_model = self.model_class(**null_params)
                 null_model.fit(X_train, y_train)
                 null_recon = np.linalg.norm(
                     X_test - null_model.transform(X_test) @ null_model.H, ord="fro"
                 )
 
-                model = SeparatedSummitNMF(**params)
+                model = self.model_class(**params)
                 model.fit(X_train, y_train)
 
                 y_pred = model.predict(X_test)
@@ -293,7 +341,7 @@ class SOptimizer:
         study = optuna.create_study(
             sampler=sampler,
             direction="maximize",
-            study_name="multi-covariates optimization (SHNMF)",
+            study_name="multi-covariates optimization (SeperatedSummitNMF)",
         )
         study.optimize(objective, n_trials=self.n_trials)
         self.study = study
@@ -310,6 +358,7 @@ class SOptimizer:
             "alpha": alphas,
             "flexible_label_matrix": self.flexible_label_matrix,
             "class_imbalance": self.class_imbalance,
+            "batch_size": self.batch_size,
             "max_iter": self.max_iter,
             "eps": self.eps,
             "device": self.device,
@@ -317,5 +366,7 @@ class SOptimizer:
             "dtype": self.dtype,
             "random_state": self.random_state,
             "tol": self.tol,
+            "shuffle": self.shuffle,
+            "num_workers": self.num_workers,
         }
         return best_params

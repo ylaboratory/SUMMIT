@@ -67,8 +67,8 @@ class UnifiedSummitNMF(SummitNMFBase):
             dtype=self.dtype,
         )
         X, Ys, W, H, Bs, M, Ls = self.dp.fit(X, y, W, H, Bs)
-        H = H.to(self.device, non_blocking=True)
-        Bs = [B.to(self.device, non_blocking=True) for B in Bs]
+        H = H.to(self.device)
+        Bs = [B.to(self.device) for B in Bs]
 
         dataset = None
         if self.preload:
@@ -76,9 +76,13 @@ class UnifiedSummitNMF(SummitNMFBase):
         else:
             dataset = swap_dataset(X=X, Ys=Ys, W=W, M=M, Ls=Ls, device=self.device)
 
-        self.ref_Y = self.dp.ref_Y
-        self.n_covariates = len(self.ref_Y)
-        self.cov_names = self.ref_Y.keys()
+        self.ref_Y_encoders = self.dp.ref_Y_encoders
+        self.Y_label_encoded_order = {
+            cov_name: self.ref_Y_encoders[cov_name].classes_
+            for cov_name in self.ref_Y_encoders.keys()
+        }
+        self.n_covariates = len(self.ref_Y_encoders)
+        self.cov_names = list(self.ref_Y_encoders.keys())
         self.batch_size = (
             self.batch_size if self.batch_size is not None else len(dataset)
         )
@@ -88,7 +92,7 @@ class UnifiedSummitNMF(SummitNMFBase):
             batch_size=self.batch_size,
             shuffle=self.shuffle,
             num_workers=self.num_workers,
-            pin_memory=True,
+            pin_memory=False if self.preload else True,
         )
 
         self.loss_history_ = {
@@ -108,35 +112,40 @@ class UnifiedSummitNMF(SummitNMFBase):
             for batch_data, batch_idx in dataloader:
                 X_batch, W_batch, M_batch, Ys_batch, Ls_batch = batch_data
 
+                # if dataset is not preloaded, move data to device
+                # this setting is also related to the pin_memory
+                if not self.preload:
+                    X_batch = X_batch.to(self.device, non_blocking=True)
+                    W_batch = W_batch.to(self.device, non_blocking=True)
+                    M_batch = M_batch.to(self.device, non_blocking=True)
+                    Ys_batch = [Y.to(self.device, non_blocking=True) for Y in Ys_batch]
+                    Ls_batch = [L.to(self.device, non_blocking=True) for L in Ls_batch]
+
                 # compute L
-                L = torch.ones_like(
-                    Ls_batch[0], dtype=self.dtype, device=Ls_batch[0].device
-                )
-                for l_mat in Ls_batch:
-                    L *= l_mat
+                L_batch = self._compute_L(Ls_batch)
 
                 # update H
                 H = self._update_H(X=X_batch, W=W_batch, H=H, M=M_batch)
 
                 # update Bs
                 for i in range(self.n_covariates):
-                    YB = self._compute_YB(Ys_batch, Bs, Ls_batch)
+                    YB = self._compute_YB(Ys_batch, Bs, L_batch)
                     Bs[i] = self._update_B(
-                        Y=Ys[i], W=W_batch, B=Bs[i], YB=YB, L=Ls_batch
+                        Y=Ys_batch[i], W=W_batch, B=Bs[i], YB=YB, L=L_batch
                     )
 
                 # update Ys
                 if self.flexible_label_matrix:
                     for i in range(self.n_covariates):
-                        YB = self._compute_YB(Ys_batch, Bs, Ls_batch)
+                        YB = self._compute_YB(Ys_batch, Bs, L_batch)
                         Ys_batch[i] = self._update_Y(
-                            Y=Ys_batch[i], W=W_batch, B=Bs[i], YB=YB, L=Ls_batch
+                            Y=Ys_batch[i], W=W_batch, B=Bs[i], YB=YB, L=L_batch
                         )
 
                 # update W
-                YB = self._compute_YB(Ys_batch, Bs, Ls_batch)
+                YB = self._compute_YB(Ys_batch, Bs, L_batch)
                 W_batch = self._update_W(
-                    X=X_batch, W=W_batch, H=H, YB=YB, M=M_batch, L=Ls_batch
+                    X=X_batch, W=W_batch, H=H, YB=YB, M=M_batch, L=L_batch
                 )
 
                 # update to dataset
@@ -145,10 +154,11 @@ class UnifiedSummitNMF(SummitNMFBase):
             # loss is computed on the entire dataset, and are on cpu
             # to avoid memory issues
             X, W, M, Ys, Ls = dataset.get_all_matrices()
+            L = self._compute_L(Ls)
             H_copy = H.clone().cpu()
             Bs_copy = [B.clone().cpu() for B in Bs]
-            reconstruction_loss, harmonic_loss, ind_harmonic_loss, total_loss = (
-                self._compute_loss(X, Ys, W, H_copy, Bs_copy, M, Ls)
+            reconstruction_loss, harmonic_loss, total_loss = self._compute_loss(
+                X, Ys, W, H_copy, Bs_copy, M, L
             )
             self.loss_history_["reconstruction"].append(reconstruction_loss)
             self.loss_history_["harmonic"].append(harmonic_loss)
@@ -172,15 +182,14 @@ class UnifiedSummitNMF(SummitNMFBase):
 
         X, W, M, Ys, Ls = dataset.get_all_matrices()
         self.W = W.numpy()
-        self.H = H.numpy()
+        self.H = H.cpu().numpy()
         self.M = M.numpy()
-        self.Bs = [B.numpy() for B in Bs]
+        self.Bs = [B.cpu().numpy() for B in Bs]
         self.Ys = [Y.numpy() for Y in Ys]
 
-        L = torch.ones_like(Ls[0], dtype=self.dtype, device=Ls[0].device)
-        for l_mat in Ls:
-            L *= l_mat
-        self.L = L
+        L = self._compute_L(Ls)
+        self.L = L.cpu().numpy()
+        return self
 
     def transform(
         self,
@@ -188,14 +197,11 @@ class UnifiedSummitNMF(SummitNMFBase):
         y: Dict[str, Iterable[str | int]] = None,
         max_iter: Optional[int] = None,
     ):
-        self._check_parameters(["H", "ref_Y"])
+        self._check_parameters(["H", "ref_Y_encoders"])
         max_iter = self.max_iter if max_iter is None else max_iter
 
-        H = torch.tensor(self.H, dtype=self.dtype).to(self.device, non_blocking=True)
-        Bs = [
-            torch.tensor(B, dtype=self.dtype).to(self.device, non_blocking=True)
-            for B in self.Bs
-        ]
+        H = torch.tensor(self.H, dtype=self.dtype).to(self.device)
+        Bs = [torch.tensor(B, dtype=self.dtype).to(self.device) for B in self.Bs]
 
         if y is None:
             X, W, M = self.dp.transform(X)
@@ -219,7 +225,7 @@ class UnifiedSummitNMF(SummitNMFBase):
             batch_size=self.batch_size,
             shuffle=self.shuffle,
             num_workers=self.num_workers,
-            pin_memory=True,
+            pin_memory=False if self.preload else True,
         )
 
         progress_bar = (
@@ -231,24 +237,29 @@ class UnifiedSummitNMF(SummitNMFBase):
             for batch_data, batch_idx in dataloader:
                 X_batch, W_batch, M_batch, Ys_batch, Ls_batch = batch_data
 
+                # if dataset is not preloaded, move data to device
+                # this setting is also related to the pin_memory
+                if not self.preload:
+                    X_batch = X_batch.to(self.device, non_blocking=True)
+                    W_batch = W_batch.to(self.device, non_blocking=True)
+                    M_batch = M_batch.to(self.device, non_blocking=True)
+                    Ys_batch = [Y.to(self.device, non_blocking=True) for Y in Ys_batch]
+                    Ls_batch = [L.to(self.device, non_blocking=True) for L in Ls_batch]
+
                 # compute L
-                L = torch.ones_like(
-                    Ls_batch[0], dtype=self.dtype, device=Ls_batch[0].device
-                )
-                for l_mat in Ls_batch:
-                    L *= l_mat
+                L = self._compute_L(Ls_batch)
 
                 if y is not None:
                     if self.flexible_label_matrix:
-                        YB = self._compute_YB(Ys_batch, Bs, Ls_batch)
+                        YB = self._compute_YB(Ys_batch, Bs, L)
                         Ys_batch = [
                             self._update_Y(Y=Y, W=W, B=B, YB=YB, L=L)
                             for Y, B in zip(Ys_batch, Bs)
                         ]
 
-                    YB = self._compute_YB(Ys_batch, Bs, Ls_batch)
+                    YB = self._compute_YB(Ys_batch, Bs, L)
                     W_batch = self._update_W(
-                        X=X_batch, W=W_batch, H=H, YB=YB, M=M_batch, L=Ls_batch
+                        X=X_batch, W=W_batch, H=H, YB=YB, M=M_batch, L=L
                     )
                 else:
                     # if is unsupervised, only update W using X
@@ -277,7 +288,7 @@ class UnifiedSummitNMF(SummitNMFBase):
 
     def predict(self, X: TensorLike) -> Dict[str, List[str]]:
         # Ensure the model has been fitted and required parameters are available
-        self._check_parameters(["H", "Bs", "ref_Y"])
+        self._check_parameters(["H", "Bs", "ref_Y_encoders"])
 
         # Transform the input data to the latent space
         W_pred = self.transform(X)
@@ -296,20 +307,12 @@ class UnifiedSummitNMF(SummitNMFBase):
         D = np.linalg.norm(W_pred[:, np.newaxis, :] - combinations, axis=2)
         predicted_indices = np.argmin(D, axis=1)
 
-        # Map the indices back to their original labels
-        predicted_labels = [
-            [
-                label
-                for cov_name, row_idx in zip(self.cov_names, list(result.keys())[idx])
-                for label, mapped_idx in self.ref_Y[cov_name].items()
-                if mapped_idx == row_idx
-            ]
-            for idx in predicted_indices
-        ]
-        predicted_labels = np.array(predicted_labels).T
+        # Map the indices back to their original labels using inverse_transform
         predicted_labels = {
-            cov_name: labels
-            for cov_name, labels in zip(self.cov_names, predicted_labels)
+            cov_name: self.ref_Y_encoders[cov_name].inverse_transform(
+                [list(result.keys())[idx][i] for idx in predicted_indices]
+            )
+            for i, cov_name in enumerate(self.cov_names)
         }
         return predicted_labels
 
@@ -331,11 +334,17 @@ class UnifiedSummitNMF(SummitNMFBase):
                 f"The following parameters are missing in the model: {', '.join(missing_params)}. Please fit the model first."
             )
 
+    def _compute_L(self, Ls):
+        L = torch.ones_like(Ls[0], dtype=self.dtype, device=Ls[0].device)
+        for l_mat in Ls:
+            L *= l_mat
+        return L
+
     def _compute_reconstruction_loss(self, X, W, H, M):
         return torch.norm(M * (X - W @ H)).item() ** 2
 
     def _compute_harmonic_loss(self, Ys, W, Bs, L):
-        YB = torch.zeros_like(W, dtype=self.dtype, device=self.device)
+        YB = torch.zeros_like(W, dtype=self.dtype, device=L.device)
         for i in range(self.n_covariates):
             YB += Ys[i] @ Bs[i]
         return torch.norm(L * (W - YB)).item() ** 2
@@ -350,7 +359,7 @@ class UnifiedSummitNMF(SummitNMFBase):
         )
 
     def _compute_YB(self, Ys, Bs, L):
-        YB = torch.zeros_like(L, dtype=self.dtype, device=self.device)
+        YB = torch.zeros_like(L, dtype=self.dtype, device=L.device)
         for i in range(self.n_covariates):
             YB += Ys[i] @ Bs[i]
         return YB
@@ -379,3 +388,27 @@ class UnifiedSummitNMF(SummitNMFBase):
         numerator = (L**2 * W) @ B.T
         denominator = (L**2 * (YB)) @ B.T
         return Y * (numerator / torch.clamp(denominator, min=self.eps))
+
+    def __str__(self):
+        return (
+            "UnifiedSummitNMF(\n"
+            f"  n_components={self.n_components},\n"
+            f"  lam={self.lam},\n"
+            f"  flexible_label_matrix={self.flexible_label_matrix},\n"
+            f"  class_imbalance={self.class_imbalance},\n"
+            f"  batch_size={self.batch_size},\n"
+            f"  max_iter={self.max_iter},\n"
+            f"  device={self.device},\n"
+            f"  random_state={self.random_state},\n"
+            f"  eps={self.eps},\n"
+            f"  tol={self.tol},\n"
+            f"  verbose={self.verbose},\n"
+            f"  preload={self.preload},\n"
+            f"  dtype={self.dtype},\n"
+            f"  shuffle={self.shuffle},\n"
+            f"  num_workers={self.num_workers}\n"
+            ")"
+        )
+
+    def __repr__(self):
+        return self.__str__()

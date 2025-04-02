@@ -13,11 +13,11 @@ class preload_dataset(Dataset):
         Ls: List[torch.Tensor],
         device: str,
     ):
-        self.X = X.to(device, non_blocking=True)
-        self.Ys = Ys.to(device, non_blocking=True)
-        self.W = W.to(device, non_blocking=True)
-        self.M = M.to(device, non_blocking=True)
-        self.Ls = Ls.to(device, non_blocking=True)
+        self.X = X.to(device)
+        self.Ys = [Y.to(device) for Y in Ys]
+        self.W = W.to(device)
+        self.M = M.to(device)
+        self.Ls = [L.to(device) for L in Ls]
         self.device = device
 
     def __len__(self):
@@ -81,12 +81,6 @@ class swap_dataset(Dataset):
         M_sample = self.M[idx]
         Ys_sample = [Y[idx] for Y in self.Ys]
         Ls_sample = [L[idx] for L in self.Ls]
-
-        X_sample = X_sample.to(self.device, non_blocking=True)
-        W_sample = W_sample.to(self.device, non_blocking=True)
-        M_sample = M_sample.to(self.device, non_blocking=True)
-        Ys_sample = [Y.to(self.device, non_blocking=True) for Y in Ys_sample]
-        Ls_sample = [L.to(self.device, non_blocking=True) for L in Ls_sample]
 
         return [X_sample, W_sample, M_sample, Ys_sample, Ls_sample], idx
 
