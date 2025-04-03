@@ -174,7 +174,13 @@ class UOptimizer:
                 y_pred = model.predict(X_test)
                 score = 0
                 for key in y_test.keys():
-                    non_nan_indices = ~np.isnan(y_test[key])
+                    non_nan_indices = np.array(
+                        [
+                            i
+                            for i, val in enumerate(y_test[key])
+                            if val is not None and val == val
+                        ]
+                    )
                     score += f1_score(
                         y_test[key][non_nan_indices],
                         y_pred[key][non_nan_indices],
@@ -322,7 +328,13 @@ class SOptimizer:
                 y_pred = model.predict(X_test)
                 score = 0
                 for key in y_test.keys():
-                    non_nan_indices = ~np.isnan(y_test[key])
+                    non_nan_indices = np.array(
+                        [
+                            i
+                            for i, val in enumerate(y_test[key])
+                            if val is not None and val == val
+                        ]
+                    )
                     score += f1_score(
                         y_test[key][non_nan_indices],
                         y_pred[key][non_nan_indices],

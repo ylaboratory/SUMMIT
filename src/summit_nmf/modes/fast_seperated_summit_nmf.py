@@ -216,7 +216,7 @@ class FastSeparatedSummitNMF(SummitNMFBase):
         self._check_parameters(["W", "H"])
         return self.W @ self.H
 
-    def predict(self, X: TensorLike) -> Dict[str, List[str]]:
+    def predict(self, X: TensorLike) -> Dict[str, np.ndarray[str]]:
         self._check_parameters(["H", "Bs", "ref_Y_encoders"])
 
         # Transform the input data to the latent space

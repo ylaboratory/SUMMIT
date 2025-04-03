@@ -217,7 +217,7 @@ class FastUnifiedSummitNMF(SummitNMFBase):
         self._check_parameters(["W", "H"])
         return self.W @ self.H
 
-    def predict(self, X: TensorLike) -> Dict[str, List[str]]:
+    def predict(self, X: TensorLike) -> Dict[str, np.ndarray[str]]:
         # Ensure the model has been fitted and required parameters are available
         self._check_parameters(["H", "Bs", "ref_Y_encoders"])
 
@@ -240,8 +240,7 @@ class FastUnifiedSummitNMF(SummitNMFBase):
 
         # Map the indices back to their original labels using inverse_transform
         predicted_labels = {
-            cov_name: self.ref_Y_encoders[cov_name]
-            .inverse_transform(
+            cov_name: self.ref_Y_encoders[cov_name].inverse_transform(
                 [list(result.keys())[idx][i] for idx in predicted_indices]
             )
             for i, cov_name in enumerate(self.cov_names)
