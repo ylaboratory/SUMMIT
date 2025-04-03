@@ -10,7 +10,7 @@ from itertools import product
 
 from summit_nmf.modes.base_summit_nmf import SummitNMFBase
 from summit_nmf.utils.data_preprocess import DataPreprocessor
-from summit_nmf.utils.dataset import hybrid_dataset
+from summit_nmf.utils.dataset import summit_dataset
 
 TensorLike = Union[np.ndarray, torch.Tensor]
 
@@ -34,6 +34,7 @@ class UnifiedSummitNMF(SummitNMFBase):
         dtype: torch.dtype = torch.float32,
         shuffle: bool = True,
         num_workers: int = 0,
+        save_loss_interval: int = 5,
     ):
         device = device if device else torch.device("cpu")
         super().__init__(
@@ -51,6 +52,7 @@ class UnifiedSummitNMF(SummitNMFBase):
             dtype,
             shuffle,
             num_workers,
+            save_loss_interval,
         )
 
     def fit(self, X: TensorLike, y: Dict[str, Iterable[str | int]], **kwargs):
@@ -65,10 +67,14 @@ class UnifiedSummitNMF(SummitNMFBase):
             dtype=self.dtype,
         )
         X, Ys, W, H, Bs, M, Ls = self.dp.fit(X, y, W, H, Bs)
+
+        Ys = [Y.to(self.device) for Y in Ys]
+        W = W.to(self.device)
         H = H.to(self.device)
         Bs = [B.to(self.device) for B in Bs]
+        Ls = [L.to(self.device) for L in Ls]
 
-        dataset = hybrid_dataset(X=X, Ys=Ys, W=W, M=M, Ls=Ls, device=self.device)
+        dataset = summit_dataset(X=X, M=M)
 
         self.ref_Y_encoders = self.dp.ref_Y_encoders
         self.Y_label_encoded_order = {
@@ -95,7 +101,7 @@ class UnifiedSummitNMF(SummitNMFBase):
             "total": [],
         }
 
-        iter_ = 0
+        self.iter_ = 0
         progress_bar = (
             tqdm(range(self.max_iter), desc="Training", postfix={"loss": 0.0})
             if self.verbose
@@ -103,9 +109,14 @@ class UnifiedSummitNMF(SummitNMFBase):
         )
 
         for iter_ in progress_bar:
-            for batch_data, batch_idx in dataloader:
-                X_batch, W_batch, M_batch, Ys_batch, Ls_batch = batch_data
+            self.iter = iter_
+
+            for X_batch, M_batch, batch_idx in dataloader:
                 X_batch = X_batch.to(self.device, non_blocking=True)
+                Ys_batch = [Y[batch_idx] for Y in Ys]
+                W_batch = W[batch_idx]
+                Ls_batch = [L[batch_idx] for L in Ls]
+                M_batch = M_batch.to(self.device, non_blocking=True)
 
                 # compute L
                 L_batch = self._compute_L(Ls_batch)
@@ -135,43 +146,44 @@ class UnifiedSummitNMF(SummitNMFBase):
                 )
 
                 # update to dataset
-                dataset.update(indices=batch_idx, W=W_batch, Ys=Ys_batch)
+                W[batch_idx] = W_batch
+                if self.flexible_label_matrix:
+                    for i in range(self.n_covariates):
+                        Ys[i][batch_idx] = Ys_batch[i]
 
-            # loss is computed on the entire dataset, and are on cpu
-            # to avoid memory issues
-            X, W, M, Ys, Ls = dataset.get_all_matrices()
-            L = self._compute_L(Ls)
-            H_copy = H.clone().cpu()
-            Bs_copy = [B.clone().cpu() for B in Bs]
-            reconstruction_loss, harmonic_loss, total_loss = self._compute_loss(
-                X, Ys, W, H_copy, Bs_copy, M, L
-            )
-            self.loss_history_["reconstruction"].append(reconstruction_loss)
-            self.loss_history_["harmonic"].append(harmonic_loss)
-            self.loss_history_["total"].append(total_loss)
-
-            if self.verbose:
-                progress_bar.set_postfix({"loss": total_loss})
-
-            iter_ += 1
-            if (
-                iter_ > 2
-                and abs(
-                    self.loss_history_["total"][-1] - self.loss_history_["total"][-2]
+            if iter_ % self.save_loss_interval == 0:
+                X_ref, M_ref = dataset.get_all_matrices()
+                W_copy = W.clone().cpu()
+                H_copy = H.clone().cpu()
+                Bs_copy = [B.clone().cpu() for B in Bs]
+                Ys_copy = [Y.clone().cpu() for Y in Ys]
+                Ls_copy = [L.clone().cpu() for L in Ls]
+                L_copy = self._compute_L(Ls_copy)
+                reconstruction_loss, harmonic_loss, total_loss = self._compute_loss(
+                    X_ref, Ys_copy, W_copy, H_copy, Bs_copy, M_ref, L_copy
                 )
-                < self.tol
-            ):
-                break
+                self.loss_history_["reconstruction"].append(reconstruction_loss)
+                self.loss_history_["harmonic"].append(harmonic_loss)
+                self.loss_history_["total"].append(total_loss)
 
-        self.iter = iter_
+                if self.verbose:
+                    progress_bar.set_postfix({"loss": total_loss})
+
+                # check for convergence
+                if len(self.loss_history_["total"]) > 2:
+                    total_diff = abs(self.loss_history_["total"][-1] - self.loss_history_["total"][-2])
+                    if total_diff < self.tol:
+                        break
+
         self.loss_history_ = pd.DataFrame(self.loss_history_)
+        self.loss_history_["n_epoch"] = [i * self.save_loss_interval for i in range(len(self.loss_history_))]
 
-        X, W, M, Ys, Ls = dataset.get_all_matrices()
-        self.W = W.numpy()
+        _, M = dataset.get_all_matrices()
+        self.W = W.cpu().numpy()
         self.H = H.cpu().numpy()
         self.M = M.numpy()
         self.Bs = [B.cpu().numpy() for B in Bs]
-        self.Ys = [Y.numpy() for Y in Ys]
+        self.Ys = [Y.cpu().numpy() for Y in Ys]
 
         L = self._compute_L(Ls)
         self.L = L.cpu().numpy()
@@ -199,8 +211,11 @@ class UnifiedSummitNMF(SummitNMFBase):
             ]  # placeholder
         else:
             X, Ys, W, M, Ls = self.dp.transform(X, y)
+        Ys = [Y.to(self.device) for Y in Ys]
+        W = W.to(self.device)
+        Ls = [L.to(self.device) for L in Ls]
 
-        dataset = hybrid_dataset(X=X, Ys=Ys, W=W, M=M, Ls=Ls, device=self.device)
+        dataset = summit_dataset(X=X, M=M)
 
         dataloader = DataLoader(
             dataset,
@@ -216,14 +231,16 @@ class UnifiedSummitNMF(SummitNMFBase):
             else range(max_iter)
         )
         for iter_ in progress_bar:
-            for batch_data, batch_idx in dataloader:
-                X_batch, W_batch, M_batch, Ys_batch, Ls_batch = batch_data
+            for X_batch, M_batch, batch_idx in dataloader:
                 X_batch = X_batch.to(self.device, non_blocking=True)
-
-                # compute L
-                L = self._compute_L(Ls_batch)
+                W_batch = W[batch_idx]
+                M_batch = M_batch.to(self.device, non_blocking=True)
 
                 if y is not None:
+                    Ys_batch = [Y[batch_idx] for Y in Ys]
+                    Ls_batch = [L[batch_idx] for L in Ls]
+                    L = self._compute_L(Ls_batch)
+
                     if self.flexible_label_matrix:
                         YB = self._compute_YB(Ys_batch, Bs, L)
                         Ys_batch = [
@@ -241,14 +258,18 @@ class UnifiedSummitNMF(SummitNMFBase):
                     denominator = W_batch @ H @ H.T
                     W_batch *= numerator / torch.clamp(denominator, min=self.eps)
 
-                dataset.update(indices=batch_idx, W=W_batch, Ys=Ys_batch)
+                # update dataset
+                W[batch_idx] = W_batch
+                if y is not None:
+                    for i in range(self.n_covariates):
+                        Ys[i][batch_idx] = Ys_batch[i]
 
-        X, W, M, Ys, Ls = dataset.get_all_matrices()
+
         if y is not None:
-            Ys = [Y.numpy() for Y in Ys]
-            return W.numpy(), Ys
+            Ys = [Y.cpu().numpy() for Y in Ys]
+            return W.cpu().numpy(), Ys
         else:
-            return W.numpy()
+            return W.cpu().numpy()
 
     def fit_transform(
         self, X: TensorLike, y: Dict[str, Iterable[str]]

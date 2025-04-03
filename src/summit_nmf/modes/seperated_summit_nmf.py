@@ -9,7 +9,7 @@ from typing import Iterable, Dict, List, Union, Optional, Tuple
 
 from summit_nmf.modes.base_summit_nmf import SummitNMFBase
 from summit_nmf.utils.data_preprocess import DataPreprocessor
-from summit_nmf.utils.dataset import hybrid_dataset
+from summit_nmf.utils.dataset import summit_dataset
 
 TensorLike = Union[np.ndarray, torch.Tensor]
 
@@ -32,6 +32,7 @@ class SeparatedSummitNMF(SummitNMFBase):
         dtype: torch.dtype = torch.float32,
         shuffle: bool = True,
         num_workers: int = 0,
+        save_loss_interval: int = 5,
     ):
         device = device if device else torch.device("cpu")
         super().__init__(
@@ -49,6 +50,7 @@ class SeparatedSummitNMF(SummitNMFBase):
             dtype,
             shuffle,
             num_workers,
+            save_loss_interval,
         )
         self.alpha = alpha
 
@@ -64,10 +66,14 @@ class SeparatedSummitNMF(SummitNMFBase):
             dtype=self.dtype,
         )
         X, Ys, W, H, Bs, M, Ls = self.dp.fit(X, y, W, H, Bs)
+
+        Ys = [Y.to(self.device) for Y in Ys]
+        W = W.to(self.device)
         H = H.to(self.device)
         Bs = [B.to(self.device) for B in Bs]
+        Ls = [L.to(self.device) for L in Ls]
 
-        dataset = hybrid_dataset(X=X, Ys=Ys, W=W, M=M, Ls=Ls, device=self.device)
+        dataset = summit_dataset(X=X, M=M)
 
         self.ref_Y_encoders = self.dp.ref_Y_encoders
         self.Y_label_encoded_order = {
@@ -96,7 +102,7 @@ class SeparatedSummitNMF(SummitNMFBase):
             **{f"harmonic_{cov_name}": [] for cov_name in self.cov_names},
         }
 
-        iter_ = 0
+        self.iter_ = 0
         progress_bar = (
             tqdm(range(self.max_iter), desc="Training", postfix={"loss": 0.0})
             if self.verbose
@@ -104,9 +110,14 @@ class SeparatedSummitNMF(SummitNMFBase):
         )
 
         for iter_ in progress_bar:
-            for batch_data, batch_idx in dataloader:
-                X_batch, W_batch, M_batch, Ys_batch, Ls_batch = batch_data
+            self.iter_ = iter_
+
+            for X_batch, M_batch, batch_idx in dataloader:
                 X_batch = X_batch.to(self.device, non_blocking=True)
+                Ys_batch = [Y[batch_idx] for Y in Ys]
+                W_batch = W[batch_idx]
+                Ls_batch = [L[batch_idx] for L in Ls]
+                M_batch = M_batch.to(self.device, non_blocking=True)
 
                 # update H
                 H = self._update_H(X=X_batch, W=W_batch, H=H, M=M_batch)
@@ -120,7 +131,7 @@ class SeparatedSummitNMF(SummitNMFBase):
                 # update Ys
                 if self.flexible_label_matrix:
                     Ys_batch = [
-                        self._update_Y(Y=Y, W=W_batch, B=B, L=L)
+                        self._update_Y(Y=Y, W=W, B=B, L=L)
                         for Y, B, L in zip(Ys_batch, Bs, Ls_batch)
                     ]
 
@@ -135,46 +146,48 @@ class SeparatedSummitNMF(SummitNMFBase):
                     Ls=Ls_batch,
                 )
 
-                # update to dataset
-                dataset.update(indices=batch_idx, W=W_batch, Ys=Ys_batch)
+                # update dataset
+                W[batch_idx] = W_batch
+                if self.flexible_label_matrix:
+                    for i in range(self.n_covariates):
+                        Ys[i][batch_idx] = Ys_batch[i]
 
-            # loss is computed on the entire dataset, and are on cpu
-            # to avoid memory issues
-            X, W, M, Ys, Ls = dataset.get_all_matrices()
-            H_copy = H.clone().cpu()
-            Bs_copy = [B.clone().cpu() for B in Bs]
-            reconstruction_loss, harmonic_loss, ind_harmonic_loss, total_loss = (
-                self._compute_loss(X, Ys, W, H_copy, Bs_copy, M, Ls)
-            )
-            self.loss_history_["reconstruction"].append(reconstruction_loss)
-            self.loss_history_["harmonic"].append(harmonic_loss)
-            for i, loss in enumerate(ind_harmonic_loss):
-                self.loss_history_[f"harmonic_{self.cov_names[i]}"].append(loss)
-            self.loss_history_["total"].append(total_loss)
-
-            if self.verbose:
-                progress_bar.set_postfix({"loss": total_loss})
-
-            iter_ += 1
-            if (
-                iter_ > 2
-                and abs(
-                    self.loss_history_["total"][-1] - self.loss_history_["total"][-2]
+            # compute and save the loss
+            if iter_ % self.save_loss_interval == 0:
+                X_ref, M_ref = dataset.get_all_matrices()
+                W_copy = W.clone().cpu()
+                H_copy = H.clone().cpu()
+                Bs_copy = [B.clone().cpu() for B in Bs]
+                Ys_copy = [Y.clone().cpu() for Y in Ys]
+                Ls_copy = [L.clone().cpu() for L in Ls]
+                reconstruction_loss, harmonic_loss, ind_harmonic_loss, total_loss = (
+                    self._compute_loss(X_ref, Ys_copy, W_copy, H_copy, Bs_copy, M_ref, Ls_copy)
                 )
-                < self.tol
-            ):
-                break
+                self.loss_history_["reconstruction"].append(reconstruction_loss)
+                self.loss_history_["harmonic"].append(harmonic_loss)
+                for i, loss in enumerate(ind_harmonic_loss):
+                    self.loss_history_[f"harmonic_{self.cov_names[i]}"].append(loss)
+                self.loss_history_["total"].append(total_loss)
 
-        self.iter = iter_
+                if self.verbose:
+                    progress_bar.set_postfix({"loss": total_loss})
+
+                # check for convergence
+                if len(self.loss_history_["total"]) > 2:
+                    total_diff = abs(self.loss_history_["total"][-1] - self.loss_history_["total"][-2])
+                    if total_diff < self.tol:
+                        break
+
         self.loss_history_ = pd.DataFrame(self.loss_history_)
+        self.loss_history_["n_epoch"] = [i * self.save_loss_interval for i in range(len(self.loss_history_))]
 
-        X, W, M, Ys, Ls = dataset.get_all_matrices()
-        self.W = W.numpy()
+        _, M = dataset.get_all_matrices()
+        self.W = W.cpu().numpy()
         self.H = H.cpu().numpy()
         self.M = M.numpy()
         self.Bs = [B.cpu().numpy() for B in Bs]
-        self.Ys = [Y.numpy() for Y in Ys]
-        self.Ls = [L.numpy() for L in Ls]
+        self.Ys = [Y.cpu().numpy() for Y in Ys]
+        self.Ls = [L.cpu().numpy() for L in Ls]
         return self
 
     def fit_transform(
@@ -204,8 +217,11 @@ class SeparatedSummitNMF(SummitNMFBase):
             ]  # placeholder
         else:
             X, Ys, W, M, Ls = self.dp.transform(X, y)
+        Ys = [Y.to(self.device) for Y in Ys]
+        W = W.to(self.device)
+        Ls = [L.to(self.device) for L in Ls]
 
-        dataset = hybrid_dataset(X=X, Ys=Ys, W=W, M=M, Ls=Ls, device=self.device)
+        dataset = summit_dataset(X=X, M=M)
 
         dataloader = DataLoader(
             dataset,
@@ -221,9 +237,12 @@ class SeparatedSummitNMF(SummitNMFBase):
             else range(max_iter)
         )
         for iter_ in progress_bar:
-            for batch_data, batch_idx in dataloader:
-                X_batch, W_batch, M_batch, Ys_batch, Ls_batch = batch_data
+            for X_batch, M_batch, batch_idx in dataloader:
                 X_batch = X_batch.to(self.device, non_blocking=True)
+                Ys_batch = [Y[batch_idx] for Y in Ys]
+                W_batch = W[batch_idx]
+                Ls_batch = [L[batch_idx] for L in Ls]
+                M_batch = M_batch.to(self.device, non_blocking=True)
 
                 if y is not None:
                     if self.flexible_label_matrix:
@@ -247,14 +266,17 @@ class SeparatedSummitNMF(SummitNMFBase):
                     denominator = W_batch @ H @ H.T
                     W_batch *= numerator / torch.clamp(denominator, min=self.eps)
 
-                dataset.update(indices=batch_idx, W=W_batch, Ys=Ys_batch)
+                # update dataset
+                W[batch_idx] = W_batch
+                if y is not None:
+                    for i in range(self.n_covariates):
+                        Ys[i][batch_idx] = Ys_batch[i]
 
-        X, W, M, Ys, Ls = dataset.get_all_matrices()
         if y is not None:
-            Ys = [Y.numpy() for Y in Ys]
-            return W.numpy(), Ys
+            Ys = [Y.cpu().numpy() for Y in Ys]
+            return W.cpu().numpy(), Ys
         else:
-            return W.numpy()
+            return W.cpu().numpy()
 
     def reconstruct(self) -> np.ndarray:
         self._check_parameters(["W", "H"])

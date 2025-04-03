@@ -204,6 +204,7 @@ class UOptimizer:
             "lam": self.study.best_params["lam"],
             "flexible_label_matrix": self.flexible_label_matrix,
             "class_imbalance": self.class_imbalance,
+            "batch_size": self.batch_size,
             "max_iter": self.max_iter,
             "eps": self.eps,
             "device": self.device,

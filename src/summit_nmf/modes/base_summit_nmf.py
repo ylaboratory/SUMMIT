@@ -22,10 +22,10 @@ class SummitNMFBase(ABC):
         eps: float,
         tol: float,
         verbose: bool,
-        preload: bool,
         dtype: torch.dtype,
         shuffle: bool,
         num_workers: int,
+        save_loss_interval: int
     ):
         self.n_components = n_components
         self.lam = lam
@@ -38,10 +38,10 @@ class SummitNMFBase(ABC):
         self.eps = eps
         self.tol = tol
         self.verbose = verbose
-        self.preload = preload
         self.dtype = dtype
         self.shuffle = shuffle
         self.num_workers = num_workers
+        self.save_loss_interval = save_loss_interval
 
     @abstractmethod
     def fit(self, X: TensorLike, y: Dict[str, Iterable[str]], **kwargs) -> None:

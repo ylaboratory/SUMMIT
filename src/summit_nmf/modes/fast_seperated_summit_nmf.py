@@ -30,6 +30,7 @@ class FastSeparatedSummitNMF(SummitNMFBase):
         dtype: torch.dtype = torch.float32,
         shuffle: bool = True,
         num_workers: int = 0,
+        save_loss_interval: int = 1,
     ):
         device = device if device else torch.device("cpu")
         super().__init__(
@@ -47,6 +48,7 @@ class FastSeparatedSummitNMF(SummitNMFBase):
             dtype,
             shuffle,
             num_workers,
+            save_loss_interval,
         )
         self.alpha = alpha
 
@@ -86,7 +88,7 @@ class FastSeparatedSummitNMF(SummitNMFBase):
             **{f"harmonic_{cov_name}": [] for cov_name in self.cov_names},
         }
 
-        iter_ = 0
+        self.iter_ = 0
         progress_bar = (
             tqdm(range(self.max_iter), desc="Training", postfix={"loss": 0.0})
             if self.verbose
@@ -94,6 +96,7 @@ class FastSeparatedSummitNMF(SummitNMFBase):
         )
 
         for iter_ in progress_bar:
+            self.iter_ = iter_
             # update H
             H = self._update_H(X=X, W=W, H=H, M=M)
 
@@ -107,32 +110,28 @@ class FastSeparatedSummitNMF(SummitNMFBase):
             # update W
             W = self._update_W(X=X, Ys=Ys, W=W, H=H, Bs=Bs, M=M, Ls=Ls)
 
-            # loss is computed on the entire dataset, and are on cpu
-            # to avoid memory issues
-            reconstruction_loss, harmonic_loss, ind_harmonic_loss, total_loss = (
-                self._compute_loss(X, Ys, W, H, Bs, M, Ls)
-            )
-            self.loss_history_["reconstruction"].append(reconstruction_loss)
-            self.loss_history_["harmonic"].append(harmonic_loss)
-            for i, loss in enumerate(ind_harmonic_loss):
-                self.loss_history_[f"harmonic_{self.cov_names[i]}"].append(loss)
-            self.loss_history_["total"].append(total_loss)
-
-            if self.verbose:
-                progress_bar.set_postfix({"loss": total_loss})
-
-            iter_ += 1
-            if (
-                iter_ > 2
-                and abs(
-                    self.loss_history_["total"][-1] - self.loss_history_["total"][-2]
+            # save the loss
+            if self.iter_ % self.save_loss_interval == 0:
+                reconstruction_loss, harmonic_loss, ind_harmonic_loss, total_loss = (
+                    self._compute_loss(X, Ys, W, H, Bs, M, Ls)
                 )
-                < self.tol
-            ):
-                break
+                self.loss_history_["reconstruction"].append(reconstruction_loss)
+                self.loss_history_["harmonic"].append(harmonic_loss)
+                for i, loss in enumerate(ind_harmonic_loss):
+                    self.loss_history_[f"harmonic_{self.cov_names[i]}"].append(loss)
+                self.loss_history_["total"].append(total_loss)
 
-        self.iter = iter_
+                if self.verbose:
+                    progress_bar.set_postfix({"loss": total_loss})
+
+                # check for convergence
+                if len(self.loss_history_["total"]) > 2:
+                    total_diff = abs(self.loss_history_["total"][-1] - self.loss_history_["total"][-2])
+                    if total_diff < self.tol:
+                        break
+
         self.loss_history_ = pd.DataFrame(self.loss_history_)
+        self.loss_history_["n_epoch"] = [i * self.save_loss_interval for i in range(len(self.loss_history_))]
 
         self.W = W.cpu().numpy()
         self.H = H.cpu().numpy()

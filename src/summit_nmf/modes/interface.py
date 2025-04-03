@@ -26,6 +26,7 @@ class SummitNMF:
         dtype: torch.dtype = torch.float32,
         shuffle: bool = True,
         num_workers: int = 0,
+        save_loss_interval: int = 5,
     ) -> Union[
         SeparatedSummitNMF,
         UnifiedSummitNMF,
@@ -82,6 +83,7 @@ class SummitNMF:
                 dtype,
                 shuffle,
                 num_workers,
+                save_loss_interval
             )
         elif model_type in ["unified", "u"]:
             return UnifiedSummitNMF(
@@ -99,6 +101,7 @@ class SummitNMF:
                 dtype,
                 shuffle,
                 num_workers,
+                save_loss_interval
             )
         elif model_type in ["fast_seperated", "fs"]:
             print(
@@ -121,6 +124,7 @@ class SummitNMF:
                 dtype,
                 shuffle,
                 num_workers,
+                save_loss_interval
             )
         elif model_type in ["fast_unified", "fu"]:
             print(
@@ -142,6 +146,7 @@ class SummitNMF:
                 dtype,
                 shuffle,
                 num_workers,
+                save_loss_interval
             )
         else:
             raise ValueError(
