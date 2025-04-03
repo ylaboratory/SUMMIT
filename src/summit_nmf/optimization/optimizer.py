@@ -1,6 +1,5 @@
 import numpy as np
 import optuna
-import optunahub
 import torch
 
 from sklearn.metrics import f1_score
@@ -17,7 +16,7 @@ class Optimizer:
     def __init__(
         self,
         model_type: str,
-        n_trials: int = 50,
+        n_trials: int = 100,
         n_cv_splits: int = 3,
         flexible_label_matrix: bool = False,
         class_imbalance: bool = False,
@@ -97,19 +96,19 @@ class UOptimizer:
     def __init__(
         self,
         model_class,
-        n_trials=100,
-        n_cv_splits=3,
-        flexible_label_matrix: bool = False,
-        class_imbalance: bool = False,
-        batch_size: int = None,
-        max_iter: int = 200,
-        device: str = None,
-        random_state: int = None,
-        eps: float = 1e-10,
-        tol: float = 1e-4,
-        dtype: torch.dtype = torch.float32,
-        shuffle: bool = True,
-        num_workers: int = 0,
+        n_trials,
+        n_cv_splits,
+        flexible_label_matrix,
+        class_imbalance,
+        batch_size,
+        max_iter,
+        device,
+        random_state,
+        eps,
+        tol,
+        dtype,
+        shuffle,
+        num_workers,
     ):
         self.model_class = model_class
         self.max_iter = max_iter
@@ -189,9 +188,8 @@ class UOptimizer:
 
             return harmonic_mean + recon_mean
 
-        sampler = optunahub.load_module("samplers/auto_sampler").AutoSampler()
         study = optuna.create_study(
-            sampler=optunahub.load_module("samplers/auto_sampler").AutoSampler(),
+            sampler=optuna.samplers.TPESampler(),
             pruner=optuna.pruners.MedianPruner(),
             direction="maximize",
             study_name="multi-covariates optimization (UnifiedSummitNMF)",
@@ -222,19 +220,19 @@ class SOptimizer:
     def __init__(
         self,
         model_class,
-        n_trials=100,
-        n_cv_splits=3,
-        flexible_label_matrix: bool = False,
-        class_imbalance: bool = False,
-        batch_size: int = None,
-        max_iter: int = 200,
-        device: str = None,
-        random_state: int = None,
-        eps: float = 1e-10,
-        tol: float = 1e-4,
-        dtype: torch.dtype = torch.float32,
-        shuffle: bool = True,
-        num_workers: int = 0,
+        n_trials,
+        n_cv_splits,
+        flexible_label_matrix,
+        class_imbalance,
+        batch_size,
+        max_iter,
+        device,
+        random_state,
+        eps,
+        tol,
+        dtype,
+        shuffle,
+        num_workers,
     ):
         self.model_class = model_class
         self.max_iter = max_iter
@@ -334,7 +332,7 @@ class SOptimizer:
             return harmonic_mean + recon_mean
 
         study = optuna.create_study(
-            sampler=optunahub.load_module("samplers/auto_sampler").AutoSampler(),
+            sampler=optuna.samplers.TPESampler(),
             pruner=optuna.pruners.MedianPruner(),
             direction="maximize",
             study_name="multi-covariates optimization (SeperatedSummitNMF)",
