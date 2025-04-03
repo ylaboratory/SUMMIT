@@ -161,7 +161,9 @@ class SeparatedSummitNMF(SummitNMFBase):
                 Ys_copy = [Y.clone().cpu() for Y in Ys]
                 Ls_copy = [L.clone().cpu() for L in Ls]
                 reconstruction_loss, harmonic_loss, ind_harmonic_loss, total_loss = (
-                    self._compute_loss(X_ref, Ys_copy, W_copy, H_copy, Bs_copy, M_ref, Ls_copy)
+                    self._compute_loss(
+                        X_ref, Ys_copy, W_copy, H_copy, Bs_copy, M_ref, Ls_copy
+                    )
                 )
                 self.loss_history_["reconstruction"].append(reconstruction_loss)
                 self.loss_history_["harmonic"].append(harmonic_loss)
@@ -174,12 +176,17 @@ class SeparatedSummitNMF(SummitNMFBase):
 
                 # check for convergence
                 if len(self.loss_history_["total"]) > 2:
-                    total_diff = abs(self.loss_history_["total"][-1] - self.loss_history_["total"][-2])
+                    total_diff = abs(
+                        self.loss_history_["total"][-1]
+                        - self.loss_history_["total"][-2]
+                    )
                     if total_diff < self.tol:
                         break
 
         self.loss_history_ = pd.DataFrame(self.loss_history_)
-        self.loss_history_["n_epoch"] = [i * self.save_loss_interval for i in range(len(self.loss_history_))]
+        self.loss_history_["n_epoch"] = [
+            i * self.save_loss_interval for i in range(len(self.loss_history_))
+        ]
 
         _, M = dataset.get_all_matrices()
         self.W = W.cpu().numpy()

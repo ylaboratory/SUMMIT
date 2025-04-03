@@ -83,7 +83,7 @@ class SummitNMF:
                 dtype,
                 shuffle,
                 num_workers,
-                save_loss_interval
+                save_loss_interval,
             )
         elif model_type in ["unified", "u"]:
             return UnifiedSummitNMF(
@@ -101,11 +101,12 @@ class SummitNMF:
                 dtype,
                 shuffle,
                 num_workers,
-                save_loss_interval
+                save_loss_interval,
             )
         elif model_type in ["fast_seperated", "fs"]:
             print(
-                "Using FastSeparatedSummitNMF, please make sure the entire dataset can be loaded into device's memory. The following parameters won't be used: batch_size, shuffle, and num_works."
+                "Using FastSeparatedSummitNMF, please make sure the entire dataset can be loaded into device's memory.\n"
+                "The following parameters won't be used: batch_size, shuffle, and num_works."
             )
 
             return FastSeparatedSummitNMF(
@@ -124,11 +125,12 @@ class SummitNMF:
                 dtype,
                 shuffle,
                 num_workers,
-                save_loss_interval
+                save_loss_interval,
             )
         elif model_type in ["fast_unified", "fu"]:
             print(
-                "Using FastSeparatedSummitNMF, please make sure the entire dataset can be loaded into device's memory. The following parameters won't be used: batch_size, shuffle, and num_works."
+                "Using FastUnifiedSummitNMF, please make sure the entire dataset can be loaded into device's memory.\n"
+                "The following parameters won't be used: batch_size, shuffle, and num_workers."
             )
 
             return FastUnifiedSummitNMF(
@@ -146,7 +148,7 @@ class SummitNMF:
                 dtype,
                 shuffle,
                 num_workers,
-                save_loss_interval
+                save_loss_interval,
             )
         else:
             raise ValueError(

@@ -25,7 +25,7 @@ class SummitNMFBase(ABC):
         dtype: torch.dtype,
         shuffle: bool,
         num_workers: int,
-        save_loss_interval: int
+        save_loss_interval: int,
     ):
         self.n_components = n_components
         self.lam = lam

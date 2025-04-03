@@ -171,12 +171,17 @@ class UnifiedSummitNMF(SummitNMFBase):
 
                 # check for convergence
                 if len(self.loss_history_["total"]) > 2:
-                    total_diff = abs(self.loss_history_["total"][-1] - self.loss_history_["total"][-2])
+                    total_diff = abs(
+                        self.loss_history_["total"][-1]
+                        - self.loss_history_["total"][-2]
+                    )
                     if total_diff < self.tol:
                         break
 
         self.loss_history_ = pd.DataFrame(self.loss_history_)
-        self.loss_history_["n_epoch"] = [i * self.save_loss_interval for i in range(len(self.loss_history_))]
+        self.loss_history_["n_epoch"] = [
+            i * self.save_loss_interval for i in range(len(self.loss_history_))
+        ]
 
         _, M = dataset.get_all_matrices()
         self.W = W.cpu().numpy()
@@ -263,7 +268,6 @@ class UnifiedSummitNMF(SummitNMFBase):
                 if y is not None:
                     for i in range(self.n_covariates):
                         Ys[i][batch_idx] = Ys_batch[i]
-
 
         if y is not None:
             Ys = [Y.cpu().numpy() for Y in Ys]

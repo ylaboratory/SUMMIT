@@ -126,12 +126,17 @@ class FastSeparatedSummitNMF(SummitNMFBase):
 
                 # check for convergence
                 if len(self.loss_history_["total"]) > 2:
-                    total_diff = abs(self.loss_history_["total"][-1] - self.loss_history_["total"][-2])
+                    total_diff = abs(
+                        self.loss_history_["total"][-1]
+                        - self.loss_history_["total"][-2]
+                    )
                     if total_diff < self.tol:
                         break
 
         self.loss_history_ = pd.DataFrame(self.loss_history_)
-        self.loss_history_["n_epoch"] = [i * self.save_loss_interval for i in range(len(self.loss_history_))]
+        self.loss_history_["n_epoch"] = [
+            i * self.save_loss_interval for i in range(len(self.loss_history_))
+        ]
 
         self.W = W.cpu().numpy()
         self.H = H.cpu().numpy()

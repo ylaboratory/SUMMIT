@@ -1,13 +1,14 @@
 import torch
 from torch.utils.data import Dataset
 
+
 class summit_dataset(Dataset):
     def __init__(
         self,
         X: torch.Tensor,
         M: torch.Tensor,
     ):
-        self.X = X 
+        self.X = X
         self.M = M
 
     def __len__(self):
