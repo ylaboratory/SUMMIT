@@ -240,9 +240,11 @@ class FastUnifiedSummitNMF(SummitNMFBase):
 
         # Map the indices back to their original labels using inverse_transform
         predicted_labels = {
-            cov_name: self.ref_Y_encoders[cov_name].inverse_transform(
+            cov_name: self.ref_Y_encoders[cov_name]
+            .inverse_transform(
                 [list(result.keys())[idx][i] for idx in predicted_indices]
             )
+            .tolist()
             for i, cov_name in enumerate(self.cov_names)
         }
         return predicted_labels

@@ -148,13 +148,11 @@ class DataPreprocessor:
             encoder.fit(valid_labels)
             self.ref_Y_encoders[cov_name] = encoder  # Store encoder for reference
 
-            # Transform labels into one-hot encoded matrix
-            encoded_labels = encoder.transform(valid_labels)
             n_labels = len(encoder.classes_)
             Y_mat = torch.zeros(self.n_samples, n_labels, dtype=self.dtype)
             for sample_idx, label in enumerate(labels):
                 if not is_missing(label):
-                    Y_mat[sample_idx, encoded_labels[sample_idx]] = 1
+                    Y_mat[sample_idx, encoder.transform([label])[0]] = 1
 
             L = self._create_mask(Y_mat)
             Ys.append(Y_mat)
@@ -179,12 +177,11 @@ class DataPreprocessor:
             if new_labels := set(valid_labels) - set(encoder.classes_):
                 raise ValueError(f"New labels {new_labels} in test set '{cov_name}'")
 
-            encoded_labels = encoder.transform(valid_labels)
             n_labels = len(encoder.classes_)
             Y_mat = torch.zeros(n_samples, n_labels, dtype=self.dtype)
             for sample_idx, label in enumerate(labels):
                 if not is_missing(label):
-                    Y_mat[sample_idx, encoded_labels[sample_idx]] = 1
+                    Y_mat[sample_idx, encoder.transform([label])[0]] = 1
 
             L = self._create_mask(Y_mat)
             Ys.append(Y_mat)

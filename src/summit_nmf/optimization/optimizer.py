@@ -174,7 +174,12 @@ class UOptimizer:
                 y_pred = model.predict(X_test)
                 score = 0
                 for key in y_test.keys():
-                    score += f1_score(y_test[key], y_pred[key], average="weighted")
+                    non_nan_indices = ~np.isnan(y_test[key])
+                    score += f1_score(
+                        y_test[key][non_nan_indices],
+                        y_pred[key][non_nan_indices],
+                        average="weighted",
+                    )
                 score /= len(y_test)
                 harmonic_losses.append(score)
 
@@ -317,7 +322,12 @@ class SOptimizer:
                 y_pred = model.predict(X_test)
                 score = 0
                 for key in y_test.keys():
-                    score += f1_score(y_test[key], y_pred[key], average="weighted")
+                    non_nan_indices = ~np.isnan(y_test[key])
+                    score += f1_score(
+                        y_test[key][non_nan_indices],
+                        y_pred[key][non_nan_indices],
+                        average="weighted",
+                    )
                 score /= len(y_test)
                 harmonic_losses.append(score)
 
