@@ -233,7 +233,7 @@ class FastSeparatedSummitNMF(SummitNMFBase):
             # Use the label encoder to inverse transform the indices back to labels
             predicted_labels[cov_name] = label_encoder.inverse_transform(
                 predicted_indices
-            ).tolist()
+            )
 
         return predicted_labels
 

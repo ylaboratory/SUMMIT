@@ -244,7 +244,6 @@ class FastUnifiedSummitNMF(SummitNMFBase):
             .inverse_transform(
                 [list(result.keys())[idx][i] for idx in predicted_indices]
             )
-            .tolist()
             for i, cov_name in enumerate(self.cov_names)
         }
         return predicted_labels
