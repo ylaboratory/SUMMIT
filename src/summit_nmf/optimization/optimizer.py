@@ -191,7 +191,8 @@ class UOptimizer:
 
         sampler = optunahub.load_module("samplers/auto_sampler").AutoSampler()
         study = optuna.create_study(
-            sampler=sampler,
+            sampler=optunahub.load_module("samplers/auto_sampler").AutoSampler(),
+            pruner=optuna.pruners.MedianPruner(),
             direction="maximize",
             study_name="multi-covariates optimization (UnifiedSummitNMF)",
         )
@@ -332,9 +333,9 @@ class SOptimizer:
 
             return harmonic_mean + recon_mean
 
-        sampler = optunahub.load_module("samplers/auto_sampler").AutoSampler()
         study = optuna.create_study(
-            sampler=sampler,
+            sampler=optunahub.load_module("samplers/auto_sampler").AutoSampler(),
+            pruner=optuna.pruners.MedianPruner(),
             direction="maximize",
             study_name="multi-covariates optimization (SeperatedSummitNMF)",
         )
