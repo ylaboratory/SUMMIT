@@ -36,9 +36,9 @@ The table below lists the implemented classes associated with these two models. 
 | Class name | Model type | Class difference description |
 | --- | --- | --- |
 | `UnifiedSummitNMF` | `"unified"` or `"u"` | Unified version. Supports large datasets and mini-batch processing. |
-| `SeperatedSummitNMF` | `"seperated"` or `"s"` | Seperated version. Supports large datasets and mini-batch processing. |
+| `SeparatedSummitNMF` | `"separated"` or `"s"` | Separated version. Supports large datasets and mini-batch processing. |
 | `FastUnifiedSummitNMF` | `"fast_unified"` or `"fu"` | Unified version. The model loads the entire dataset onto the device, requiring sufficient device memory. Mini-batch processing is not supported. |
-| `FastSeperatedSummitNMF` | `"fast_seperated"` or `"fs"` | Seperated version. The model loads the entire dataset onto the device, requiring sufficient device memory. Mini-batch processing is not supported. |
+| `FastSeparatedSummitNMF` | `"fast_separated"` or `"fs"` | Separated version. The model loads the entire dataset onto the device, requiring sufficient device memory. Mini-batch processing is not supported. |
 
 ### Optimization
 

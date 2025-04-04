@@ -4,8 +4,8 @@ import torch
 
 from sklearn.metrics import f1_score
 from sklearn.model_selection import KFold
-from summit_nmf.modes.seperated_summit_nmf import SeparatedSummitNMF
-from summit_nmf.modes.fast_seperated_summit_nmf import FastSeparatedSummitNMF
+from summit_nmf.modes.separated_summit_nmf import SeparatedSummitNMF
+from summit_nmf.modes.fast_separated_summit_nmf import FastSeparatedSummitNMF
 from summit_nmf.modes.unified_summit_nmf import UnifiedSummitNMF
 from summit_nmf.modes.fast_unified_summit_nmf import FastUnifiedSummitNMF
 from copy import deepcopy
@@ -65,7 +65,7 @@ class Optimizer:
         if self.model_type in ["unified", "u"]:
             self.optimizer = UOptimizer(model_class=UnifiedSummitNMF, **params)
 
-        elif self.model_type in ["seperated", "s"]:
+        elif self.model_type in ["separated", "s"]:
             self.optimizer = SOptimizer(model_class=SeparatedSummitNMF, **params)
 
         elif self.model_type in ["fast_unified", "fu"]:
@@ -74,7 +74,7 @@ class Optimizer:
             )
             self.optimizer = UOptimizer(model_class=FastUnifiedSummitNMF, **params)
 
-        elif self.model_type in ["fast_seperated", "fs"]:
+        elif self.model_type in ["fast_separated", "fs"]:
             UserWarning(
                 "Using FastSeparatedSummitNMF, please make sure the dataset can be loaded into device's memory. The batch_size is set to the entire dataset."
             )
@@ -357,7 +357,7 @@ class SOptimizer:
             sampler=optuna.samplers.TPESampler(),
             pruner=optuna.pruners.MedianPruner(),
             direction="maximize",
-            study_name="multi-covariates optimization (SeperatedSummitNMF)",
+            study_name="multi-covariates optimization (SeparatedSummitNMF)",
         )
         study.optimize(objective, n_trials=self.n_trials)
         self.study = study

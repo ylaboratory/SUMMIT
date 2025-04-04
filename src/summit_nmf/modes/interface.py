@@ -1,16 +1,16 @@
 import torch
 from typing import Iterable, Union
 
-from summit_nmf.modes.seperated_summit_nmf import SeparatedSummitNMF
+from summit_nmf.modes.separated_summit_nmf import SeparatedSummitNMF
 from summit_nmf.modes.unified_summit_nmf import UnifiedSummitNMF
-from summit_nmf.modes.fast_seperated_summit_nmf import FastSeparatedSummitNMF
+from summit_nmf.modes.fast_separated_summit_nmf import FastSeparatedSummitNMF
 from summit_nmf.modes.fast_unified_summit_nmf import FastUnifiedSummitNMF
 
 
 class SummitNMF:
     @staticmethod
     def create_summit_nmf(
-        model_type: str = "fast_seperated",
+        model_type: str = "fast_separated",
         n_components: int = 25,
         lam: float = 1,
         alpha: Iterable[float] = None,
@@ -38,9 +38,9 @@ class SummitNMF:
 
         Parameters:
             model_type (str): The type of model to create. Options are:
-                - "seperated" or "s": Creates a SeparatedSummitNMF instance.
+                - "separated" or "s": Creates a SeparatedSummitNMF instance.
                 - "unified" or "u": Creates a UnifiedSummitNMF instance.
-                - "fast_seperated" or "fs": Creates a FastSeparatedSummitNMF instance.
+                - "fast_separated" or "fs": Creates a FastSeparatedSummitNMF instance.
                 - "fast_unified" or "fu": Creates a FastUnifiedSummitNMF instance.
             n_components (int): Number of components for the NMF model. Default is 25.
             lam (float): Regularization parameter. Default is 1.
@@ -66,7 +66,7 @@ class SummitNMF:
             ValueError: If an invalid `model_type` is provided.
         """
 
-        if model_type in ["seperated", "s"]:
+        if model_type in ["separated", "s"]:
             return SeparatedSummitNMF(
                 n_components,
                 lam,
@@ -103,7 +103,7 @@ class SummitNMF:
                 num_workers,
                 save_loss_interval,
             )
-        elif model_type in ["fast_seperated", "fs"]:
+        elif model_type in ["fast_separated", "fs"]:
             print(
                 "Using FastSeparatedSummitNMF, please make sure the entire dataset can be loaded into device's memory.\n"
                 "The following parameters won't be used: batch_size, shuffle, and num_works."
@@ -152,5 +152,5 @@ class SummitNMF:
             )
         else:
             raise ValueError(
-                f"Invalid model_type '{model_type}'. Must be 'seperated', 's', 'unified', 'u', 'fast_seperated', or 'fs'."
+                f"Invalid model_type '{model_type}'. Must be 'separated', 's', 'unified', 'u', 'fast_separated', or 'fs'."
             )
