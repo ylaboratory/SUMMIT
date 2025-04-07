@@ -260,7 +260,7 @@ class SOptimizer:
         self.shuffle = shuffle
         self.num_workers = num_workers
 
-    def search(self, X, y, n_components_range=(5, 50), lam_range=(1e-5, 1e0)):
+    def search(self, X, y, n_components_range=(5, 50), lam_range=(1e-3, 1e+3)):
         def objective(trial):
             n_components = trial.suggest_int(
                 "n_components", n_components_range[0], n_components_range[1]
@@ -276,12 +276,11 @@ class SOptimizer:
             for i in range(num_params - 1):
                 alpha = trial.suggest_float(param_names[i], 0.0, remaining)
                 alphas.append(alpha)
-                remaining -= alpha  # Ensure sum ≤ 1
+                remaining = max(0.0, remaining - alpha)  # Ensure sum ≤ 1 and avoid out-of-bound errors
 
             # Compute the last parameter to ensure sum = 1
-            if remaining < 0:
-                remaining = 0
             alphas.append(remaining)
+            print(f"alphas: {alphas}")
 
             # Store the last parameter manually
             trial.set_user_attr(param_names[-1], alphas[-1])

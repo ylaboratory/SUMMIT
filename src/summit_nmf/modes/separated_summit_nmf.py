@@ -336,7 +336,7 @@ class SeparatedSummitNMF(SummitNMFBase):
             if a < 0:
                 raise ValueError("Alpha values should be non-negative.")
 
-        if sum(alpha) != 1:
+        if abs(sum(alpha) - 1) > 1e-3:
             raise ValueError("Alpha values should sum to 1.")
         return alpha
 
