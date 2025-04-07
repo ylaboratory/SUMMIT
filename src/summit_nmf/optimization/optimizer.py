@@ -279,6 +279,8 @@ class SOptimizer:
                 remaining -= alpha  # Ensure sum ≤ 1
 
             # Compute the last parameter to ensure sum = 1
+            if remaining < 0:
+                remaining = 0
             alphas.append(remaining)
 
             # Store the last parameter manually
