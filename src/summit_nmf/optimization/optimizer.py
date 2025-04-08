@@ -280,7 +280,6 @@ class SOptimizer:
 
             # Compute the last parameter to ensure sum = 1
             alphas.append(remaining)
-            print(f"alphas: {alphas}")
 
             # Store the last parameter manually
             trial.set_user_attr(param_names[-1], alphas[-1])
