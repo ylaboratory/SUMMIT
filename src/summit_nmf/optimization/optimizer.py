@@ -87,7 +87,7 @@ class Optimizer:
             raise ValueError(f"Unsupported model type: {self.model_type}")
 
     def search(
-        self, X, y, n_components_range=(5, 50), lam_range=(1e-5, 1e0)
+        self, X, y, n_components_range=(5, 50), lam_range=(1e-2, 1e+2)
     ) -> Dict[str, Union[str, int, float]]:
         print(
             "Suggestion for the best hyperparameters: please balance the loss between harmonic and reconstruction by adjusting the lambda to have similar range."
@@ -212,7 +212,7 @@ class UOptimizer:
                             if val is not None and val == val
                         ]
                     )
-                    score += lam * f1_score(
+                    score += f1_score(
                         y_test[key][non_nan_indices],
                         y_pred[key][non_nan_indices],
                         average="weighted",
@@ -384,8 +384,7 @@ class SOptimizer:
                         ]
                     )
                     score += (
-                        lam
-                        * alphas[i]
+                        alphas[i]
                         * f1_score(
                             y_test[key][non_nan_indices],
                             y_pred[key][non_nan_indices],

@@ -236,7 +236,7 @@ class FastSeparatedSummitNMF(SummitNMFBase):
             )
 
         return predicted_labels
-    
+
     def predict_proba(self, X: TensorLike) -> Dict[str, np.ndarray[str]]:
         self._check_parameters(["H", "Bs", "ref_Y_encoders"])
 
@@ -254,7 +254,9 @@ class FastSeparatedSummitNMF(SummitNMFBase):
             D = np.linalg.norm(W_pred[:, np.newaxis, :] - B[np.newaxis, :, :], axis=2)
             # Convert distances to probabilities (smaller distance -> higher probability)
             predicted_probs[cov_name] = 1 / (D + self.eps)
-            predicted_probs[cov_name] /= np.sum(predicted_probs[cov_name], axis=1, keepdims=True)
+            predicted_probs[cov_name] /= np.sum(
+                predicted_probs[cov_name], axis=1, keepdims=True
+            )
 
         return predicted_probs
 
