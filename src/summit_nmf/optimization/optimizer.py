@@ -1,4 +1,5 @@
 import numpy as np
+import pandas as pd
 import optuna
 import torch
 
@@ -91,12 +92,26 @@ class Optimizer:
         print(
             "Suggestion for the best hyperparameters: please balance the loss between harmonic and reconstruction by adjusting the lambda to have similar range."
         )
+        self.covariates = list(y.keys())
         self.best_params = self.optimizer.search(X, y, n_components_range, lam_range)
-        self.study_df = self.optimizer.study_df
+        self.study_df = self.optimizer.study_df.sort_values(by="value", ascending=True)
         self.study = self.optimizer.study
 
         return self.best_params
-
+    
+    def get_prediction_report(self, top_n=20):
+        report_data = []
+        for cov in self.covariates:
+            column = self.study_df[f"user_attrs_f1_score_{cov}"][0:top_n]
+            report_data.append({
+                "covariate": cov,
+                "mean": column.mean(),
+                "std": column.std(),
+                "min": column.min(),
+                "max": column.max(),
+                "median": column.median(),
+            })
+        return pd.DataFrame(report_data)
 
 class UOptimizer:
     def __init__(
@@ -166,6 +181,8 @@ class UOptimizer:
             )
             harmonic_losses = []
             recon_losses = []
+            f1_scores = [0] * len(y)
+
 
             # y_array = np.array(list(y.values())).T  # Convert y dictionary to a 2D array for splitting
 
@@ -200,7 +217,13 @@ class UOptimizer:
                         y_pred[key][non_nan_indices],
                         average="weighted",
                     )
-                # score /= len(y_test)
+
+                    f1_scores[i] += f1_score(
+                        y_test[key][non_nan_indices],
+                        y_pred[key][non_nan_indices],
+                        average="weighted",
+                    )
+
                 harmonic_losses.append(score)
 
                 recon_loss = np.linalg.norm(
@@ -210,6 +233,12 @@ class UOptimizer:
 
             harmonic_mean = np.mean(harmonic_losses)
             recon_mean = np.mean(recon_losses)
+
+            f1_scores = [
+                f1 / self.n_cv_splits for f1 in f1_scores
+            ]
+            for i, key in enumerate(y_pred.keys()):
+                trial.set_user_attr(f"f1_score_{key}", f1_scores[i])
 
             return recon_mean - harmonic_mean + self.weight_n_comp * n_components
 
@@ -326,8 +355,7 @@ class SOptimizer:
             )
             harmonic_losses = []
             recon_losses = []
-
-            # y_array = np.array(list(y.values())).T  # Convert y dictionary to a 2D array for splitting
+            f1_scores = [0] * len(y)
 
             for train_index, test_index in kf.split(X):
                 X_train, X_test = X[train_index], X[test_index]
@@ -364,7 +392,13 @@ class SOptimizer:
                             average="weighted",
                         )
                     )
-                # score /= len(y_test)
+
+                    f1_scores[i] += f1_score(
+                        y_test[key][non_nan_indices],
+                        y_pred[key][non_nan_indices],
+                        average="weighted",
+                    )
+
                 harmonic_losses.append(score)
 
                 recon_loss = np.linalg.norm(
@@ -372,6 +406,12 @@ class SOptimizer:
                 ) / np.linalg.norm(X_test, ord="fro")
                 # recon_losses.append(null_recon / recon_loss)
                 recon_losses.append(recon_loss)
+
+            f1_scores = [
+                f1 / self.n_cv_splits for f1 in f1_scores
+            ]
+            for i, key in enumerate(y_pred.keys()):
+                trial.set_user_attr(f"f1_score_{key}", f1_scores[i])
 
             harmonic_mean = np.mean(harmonic_losses)
             recon_mean = np.mean(recon_losses)

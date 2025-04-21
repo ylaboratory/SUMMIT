@@ -236,6 +236,27 @@ class FastSeparatedSummitNMF(SummitNMFBase):
             )
 
         return predicted_labels
+    
+    def predict_proba(self, X: TensorLike) -> Dict[str, np.ndarray[str]]:
+        self._check_parameters(["H", "Bs", "ref_Y_encoders"])
+
+        # Transform the input data to the latent space
+        W_pred = self.transform(X)
+
+        # Calculate the distance between W_pred and each Bs[c] separately
+        predicted_probs = {
+            cov_name: np.zeros((W_pred.shape[0], B.shape[0]), dtype=np.float32)
+            for cov_name, B in zip(self.cov_names, self.Bs)
+        }
+
+        for cov_name, B in zip(self.cov_names, self.Bs):
+            # Compute the distance between W_pred and each row of B
+            D = np.linalg.norm(W_pred[:, np.newaxis, :] - B[np.newaxis, :, :], axis=2)
+            # Convert distances to probabilities (smaller distance -> higher probability)
+            predicted_probs[cov_name] = 1 / (D + self.eps)
+            predicted_probs[cov_name] /= np.sum(predicted_probs[cov_name], axis=1, keepdims=True)
+
+        return predicted_probs
 
     def get_components(self) -> Dict[str, np.ndarray]:
         matrices = {
