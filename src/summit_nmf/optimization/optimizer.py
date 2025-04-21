@@ -99,7 +99,7 @@ class Optimizer:
 
         return self.best_params
     
-    def get_prediction_report(self, top_n=20):
+    def get_f1_report(self, top_n=20):
         report_data = []
         for cov in self.covariates:
             column = self.study_df[f"user_attrs_f1_score_{cov}"][0:top_n]
