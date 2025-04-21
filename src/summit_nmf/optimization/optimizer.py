@@ -259,6 +259,7 @@ class SOptimizer:
         dtype,
         shuffle,
         num_workers,
+        weight_n_comp,
     ):
         self.model_class = model_class
         self.max_iter = max_iter
@@ -274,6 +275,7 @@ class SOptimizer:
         self.dtype = dtype
         self.shuffle = shuffle
         self.num_workers = num_workers
+        self.weight_n_comp = weight_n_comp
 
     def __repr__(self):
         return f"Optimizer(model_class={self.model_class.__name__}, n_trials={self.n_trials}, n_cv_splits={self.n_cv_splits}, flexible_label_matrix={self.flexible_label_matrix}, class_imbalance={self.class_imbalance}, batch_size={self.batch_size}, max_iter={self.max_iter}, device={self.device}, random_state={self.random_state}, eps={self.eps}, tol={self.tol}, dtype={self.dtype}, shuffle={self.shuffle}, num_workers={self.num_workers})"
