@@ -4,7 +4,7 @@ import pandas as pd
 from typing import Dict, Iterable, Optional, Any, Union, Tuple
 from sklearn.preprocessing import LabelEncoder
 
-TensorLike = Union[np.ndarray, torch.Tensor]
+ArrayLike = Union[np.ndarray, torch.Tensor]
 
 
 def is_missing(label) -> bool:
@@ -36,11 +36,11 @@ class DataPreprocessor:
 
     def fit(
         self,
-        X: TensorLike,
+        X: ArrayLike,
         Y: Dict[str, Iterable[str]],
-        W: Optional[TensorLike] = None,
-        H: Optional[TensorLike] = None,
-        Bs: Optional[Iterable[TensorLike]] = None,
+        W: Optional[ArrayLike] = None,
+        H: Optional[ArrayLike] = None,
+        Bs: Optional[Iterable[ArrayLike]] = None,
     ):
         # Process X and create mask M
         X, M = self._process_X(X)
@@ -103,7 +103,7 @@ class DataPreprocessor:
 
     def transform(
         self,
-        X: TensorLike,
+        X: ArrayLike,
         Y: Optional[Dict[str, Iterable[str]]] = None,
     ):
         # Process X and create mask M
@@ -120,7 +120,7 @@ class DataPreprocessor:
         else:
             return X, W, M
 
-    def _process_X(self, X: TensorLike) -> Tuple[torch.Tensor, torch.Tensor]:
+    def _process_X(self, X: ArrayLike) -> Tuple[torch.Tensor, torch.Tensor]:
         # Convert X to tensor and pin memory if not preloading
         X = torch.as_tensor(X, dtype=self.dtype) if not torch.is_tensor(X) else X
 

@@ -89,9 +89,10 @@ class Optimizer:
     def search(
         self, X, y, n_components_range=(5, 50), lam_range=(1e-2, 1e+2)
     ) -> Dict[str, Union[str, int, float]]:
-        print(
-            "Suggestion for the best hyperparameters: please balance the loss between harmonic and reconstruction by adjusting the lambda to have similar range."
-        )
+
+        if isinstance(y, (np.ndarray, torch.Tensor)):
+            y = {f"cov{i}": y[:, i] for i in range(y.shape[1])}
+        
         self.covariates = list(y.keys())
         self.best_params = self.optimizer.search(X, y, n_components_range, lam_range)
         self.study_df = self.optimizer.study_df.sort_values(by="value", ascending=True)

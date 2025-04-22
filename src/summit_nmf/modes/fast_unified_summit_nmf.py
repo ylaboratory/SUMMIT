@@ -10,7 +10,7 @@ from itertools import product
 from summit_nmf.modes.base_summit_nmf import SummitNMFBase
 from summit_nmf.utils.data_preprocess import DataPreprocessor
 
-TensorLike = Union[np.ndarray, torch.Tensor]
+ArrayLike = Union[np.ndarray, torch.Tensor]
 
 
 class FastUnifiedSummitNMF(SummitNMFBase):
@@ -53,10 +53,12 @@ class FastUnifiedSummitNMF(SummitNMFBase):
             save_loss_interval,
         )
 
-    def fit(self, X: TensorLike, y: Dict[str, Iterable[str | int]], **kwargs):
+    def fit(self, X: ArrayLike, y: Union[Dict[str, Iterable[str | int]], ArrayLike], **kwargs):
         W = kwargs.get("W", None)
         H = kwargs.get("H", None)
         Bs = kwargs.get("Bs", None)
+        if isinstance(y, (np.ndarray, torch.Tensor)):
+                y = {f"cov_{i}": y[:, i] for i in range(y.shape[1])}
 
         self.dp = DataPreprocessor(
             n_components=self.n_components,
@@ -152,8 +154,8 @@ class FastUnifiedSummitNMF(SummitNMFBase):
 
     def transform(
         self,
-        X: TensorLike,
-        y: Dict[str, Iterable[str | int]] = None,
+        X: ArrayLike,
+        y: Union[Dict[str, Iterable[str | int]], ArrayLike] = None,
         max_iter: Optional[int] = None,
     ):
         self._check_parameters(["H", "ref_Y_encoders"])
@@ -170,6 +172,8 @@ class FastUnifiedSummitNMF(SummitNMFBase):
                 torch.zeros((X.shape[0], B.shape[1]), dtype=self.dtype) for B in Bs
             ]  # placeholder
         else:
+            if isinstance(y, (np.ndarray, torch.Tensor)):
+                y = {f"cov_{i}": y[:, i] for i in range(y.shape[1])}
             X, Ys, W, M, Ls = self.dp.transform(X, y)
 
         X = X.to(self.device)
@@ -208,7 +212,7 @@ class FastUnifiedSummitNMF(SummitNMFBase):
             return W.cpu().numpy()
 
     def fit_transform(
-        self, X: TensorLike, y: Dict[str, Iterable[str]]
+        self, X: ArrayLike, y: Union[Dict[str, Iterable[str | int]], ArrayLike]
     ) -> Tuple[np.ndarray, List[np.ndarray]]:
         """Fit and transform the data using multiple NMF methods."""
         return self.fit(X, y).transform(X, y)
@@ -217,7 +221,7 @@ class FastUnifiedSummitNMF(SummitNMFBase):
         self._check_parameters(["W", "H"])
         return self.W @ self.H
 
-    def predict(self, X: TensorLike) -> Dict[str, np.ndarray[str]]:
+    def predict(self, X: ArrayLike) -> pd.DataFrame:
         # Ensure the model has been fitted and required parameters are available
         self._check_parameters(["H", "Bs", "ref_Y_encoders"])
 
@@ -245,7 +249,7 @@ class FastUnifiedSummitNMF(SummitNMFBase):
             )
             for i, cov_name in enumerate(self.cov_names)
         }
-        return predicted_labels
+        return pd.DataFrame(predicted_labels)
 
     def get_components(self) -> Dict[str, np.ndarray]:
         matrices = {
