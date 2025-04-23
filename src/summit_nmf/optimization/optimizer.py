@@ -385,8 +385,7 @@ class SOptimizer:
                         ]
                     )
                     score += (
-                        alphas[i]
-                        * f1_score(
+                        f1_score(
                             y_test[key][non_nan_indices],
                             y_pred[key][non_nan_indices],
                             average="weighted",

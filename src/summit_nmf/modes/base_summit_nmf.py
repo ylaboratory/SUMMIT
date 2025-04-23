@@ -3,7 +3,7 @@ from typing import Dict, List, Optional, Union, Iterable, Tuple
 import numpy as np
 import torch
 
-TensorLike = Union[np.ndarray, torch.Tensor]
+ArrayLike = Union[np.ndarray, torch.Tensor]
 
 
 class SummitNMFBase(ABC):
@@ -44,14 +44,14 @@ class SummitNMFBase(ABC):
         self.save_loss_interval = save_loss_interval
 
     @abstractmethod
-    def fit(self, X: TensorLike, y: Dict[str, Iterable[str]], **kwargs) -> None:
+    def fit(self, X: ArrayLike, y: Dict[str, Iterable[str]], **kwargs) -> None:
         """Fit the model to data."""
         pass
 
     @abstractmethod
     def transform(
         self,
-        X: TensorLike,
+        X: ArrayLike,
         y: Optional[Dict[str, Iterable[str]]] = None,
         max_iter: Optional[int] = None,
     ) -> Union[np.ndarray, Tuple[np.ndarray, List[np.ndarray]]]:
@@ -59,7 +59,7 @@ class SummitNMFBase(ABC):
         pass
 
     @abstractmethod
-    def fit_transform(self, X: TensorLike, y: Dict[str, Iterable[str]]) -> np.ndarray:
+    def fit_transform(self, X: ArrayLike, y: Dict[str, Iterable[str]]) -> np.ndarray:
         """Fit the model and return transformed data."""
         pass
 
@@ -74,6 +74,6 @@ class SummitNMFBase(ABC):
         pass
 
     @abstractmethod
-    def predict(self, X: TensorLike) -> Dict[str, List[str]]:
+    def predict(self, X: ArrayLike) -> Dict[str, List[str]]:
         """Predict the output using the learned components."""
         pass
