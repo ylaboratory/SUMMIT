@@ -20,6 +20,7 @@ class FastUnifiedSummitNMF(SummitNMFBase):
         self,
         n_components: int = 25,
         lam: float = 1,
+        alpha: Iterable[float] = None,
         flexible_label_matrix: bool = False,
         class_imbalance: bool = False,
         batch_size: int = None,
@@ -38,6 +39,7 @@ class FastUnifiedSummitNMF(SummitNMFBase):
         super().__init__(
             n_components,
             lam,
+            alpha,
             flexible_label_matrix,
             class_imbalance,
             batch_size,
@@ -53,12 +55,17 @@ class FastUnifiedSummitNMF(SummitNMFBase):
             save_loss_interval,
         )
 
-    def fit(self, X: ArrayLike, y: Union[Dict[str, Iterable[str | int]], ArrayLike], **kwargs):
+    def fit(
+        self,
+        X: ArrayLike,
+        y: Union[Dict[str, Iterable[str | int]], ArrayLike],
+        **kwargs,
+    ):
         W = kwargs.get("W", None)
         H = kwargs.get("H", None)
         Bs = kwargs.get("Bs", None)
         if isinstance(y, (np.ndarray, torch.Tensor)):
-                y = {f"cov_{i}": y[:, i] for i in range(y.shape[1])}
+            y = {f"cov_{i}": y[:, i] for i in range(y.shape[1])}
 
         self.dp = DataPreprocessor(
             n_components=self.n_components,
@@ -83,6 +90,7 @@ class FastUnifiedSummitNMF(SummitNMFBase):
         }
         self.n_covariates = len(self.ref_Y_encoders)
         self.cov_names = list(self.ref_Y_encoders.keys())
+        self.alpha = self._check_alpha(self.alpha)
 
         self.loss_history_ = {
             "reconstruction": [],
@@ -104,18 +112,18 @@ class FastUnifiedSummitNMF(SummitNMFBase):
 
             # update Bs
             for i in range(self.n_covariates):
-                YB = self._compute_YB(Ys, Bs, L)
-                Bs[i] = self._update_B(Y=Ys[i], W=W, B=Bs[i], YB=YB, L=L)
+                aYB = self._compute_aYB(Ys, Bs, L)
+                Bs[i] = self._update_B(Y=Ys[i], W=W, B=Bs[i], aYB=aYB, L=L)
 
             # update Ys
             if self.flexible_label_matrix:
                 for i in range(self.n_covariates):
-                    YB = self._compute_YB(Ys, Bs, L)
-                    Ys[i] = self._update_Y(Y=Ys[i], W=W, B=Bs[i], YB=YB, L=L)
+                    aYB = self._compute_aYB(Ys, Bs, L)
+                    Ys[i] = self._update_Y(Y=Ys[i], W=W, B=Bs[i], aYB=aYB, L=L)
 
             # update W
-            YB = self._compute_YB(Ys, Bs, L)
-            W = self._update_W(X=X, W=W, H=H, YB=YB, M=M, L=L)
+            aYB = self._compute_aYB(Ys, Bs, L)
+            W = self._update_W(X=X, W=W, H=H, aYB=aYB, M=M, L=L)
 
             # save the loss
             if self.iter_ % self.save_loss_interval == 0:
@@ -191,14 +199,14 @@ class FastUnifiedSummitNMF(SummitNMFBase):
         for iter_ in progress_bar:
             if y is not None:
                 if self.flexible_label_matrix:
-                    YB = self._compute_YB(Ys, Bs, L)
+                    aYB = self._compute_aYB(Ys, Bs, L)
                     Ys = [
-                        self._update_Y(Y=Y, W=W, B=B, YB=YB, L=L)
+                        self._update_Y(Y=Y, W=W, B=B, aYB=aYB, L=L)
                         for Y, B in zip(Ys, Bs)
                     ]
 
-                YB = self._compute_YB(Ys, Bs, L)
-                W = self._update_W(X=X, W=W, H=H, YB=YB, M=M, L=L)
+                aYB = self._compute_aYB(Ys, Bs, L)
+                W = self._update_W(X=X, W=W, H=H, aYB=aYB, M=M, L=L)
             else:
                 # if is unsupervised, only update W using X
                 numerator = X @ H.T
@@ -262,6 +270,25 @@ class FastUnifiedSummitNMF(SummitNMFBase):
         }
         return matrices
 
+    def _check_alpha(self, alpha):
+        """Check if alpha is a list of floats."""
+        if alpha is None:
+            alpha = [1.0 / self.n_covariates] * self.n_covariates
+            return alpha
+
+        if not isinstance(alpha, list):
+            raise ValueError("Alpha should be a list of floats.")
+        if len(alpha) != self.n_covariates:
+            raise ValueError(f"Alpha should have length {self.n_components}.")
+
+        for a in alpha:
+            if a < 0:
+                raise ValueError("Alpha values should be non-negative.")
+
+        if abs(sum(alpha) - 1) > 1e-3:
+            raise ValueError("Alpha values should sum to 1.")
+        return alpha
+
     def _check_parameters(self, parameters) -> None:
         missing_params = [param for param in parameters if not hasattr(self, param)]
         if missing_params:
@@ -279,10 +306,10 @@ class FastUnifiedSummitNMF(SummitNMFBase):
         return torch.norm(M * (X - W @ H)).item() ** 2
 
     def _compute_harmonic_loss(self, Ys, W, Bs, L):
-        YB = torch.zeros_like(W, dtype=self.dtype, device=L.device)
+        aYB = torch.zeros_like(W, dtype=self.dtype, device=L.device)
         for i in range(self.n_covariates):
-            YB += Ys[i] @ Bs[i]
-        return torch.norm(L * (W - YB)).item() ** 2
+            aYB += self.alpha[i] * Ys[i] @ Bs[i]
+        return torch.norm(L * (W - aYB)).item() ** 2
 
     def _compute_loss(self, X, Ys, W, H, Bs, M, L):
         reconstruction_loss = self._compute_reconstruction_loss(X, W, H, M)
@@ -293,16 +320,16 @@ class FastUnifiedSummitNMF(SummitNMFBase):
             reconstruction_loss + self.lam * harmonic_loss,
         )
 
-    def _compute_YB(self, Ys, Bs, L):
-        YB = torch.zeros_like(L, dtype=self.dtype, device=L.device)
+    def _compute_aYB(self, Ys, Bs, L):
+        aYB = torch.zeros_like(L, dtype=self.dtype, device=L.device)
         for i in range(self.n_covariates):
-            YB += Ys[i] @ Bs[i]
-        return YB
+            aYB += self.alpha[i] * Ys[i] @ Bs[i]
+        return aYB
 
-    def _update_W(self, X, W, H, YB, M, L):
+    def _update_W(self, X, W, H, aYB, M, L):
         recon_num = (M**2 * X) @ H.T
         recon_den = (M**2 * (W @ H)) @ H.T
-        pred_num = L**2 * (YB)
+        pred_num = L**2 * (aYB)
         pred_den = L**2 * W
 
         numerator = recon_num + self.lam * pred_num
@@ -314,14 +341,14 @@ class FastUnifiedSummitNMF(SummitNMFBase):
         denominator = W.T @ (M**2 * (W @ H))
         return H * (numerator / torch.clamp(denominator, min=self.eps))
 
-    def _update_B(self, Y, W, B, YB, L):
+    def _update_B(self, Y, W, B, aYB, L):
         numerator = Y.T @ (L**2 * W)
-        denominator = Y.T @ (L**2 * (YB))
+        denominator = Y.T @ (L**2 * (aYB))
         return B * (numerator / torch.clamp(denominator, min=self.eps))
 
-    def _update_Y(self, Y, W, B, YB, L):
+    def _update_Y(self, Y, W, B, aYB, L):
         numerator = (L**2 * W) @ B.T
-        denominator = (L**2 * (YB)) @ B.T
+        denominator = (L**2 * (aYB)) @ B.T
         return Y * (numerator / torch.clamp(denominator, min=self.eps))
 
     def __str__(self):
@@ -329,6 +356,7 @@ class FastUnifiedSummitNMF(SummitNMFBase):
             "FastUnifiedSummitNMF(\n"
             f"  n_components={self.n_components},\n"
             f"  lam={self.lam},\n"
+            f"  alpha={self.alpha},\n"
             f"  flexible_label_matrix={self.flexible_label_matrix},\n"
             f"  class_imbalance={self.class_imbalance},\n"
             f"  max_iter={self.max_iter},\n"

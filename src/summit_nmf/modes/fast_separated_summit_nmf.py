@@ -36,6 +36,7 @@ class FastSeparatedSummitNMF(SummitNMFBase):
         super().__init__(
             n_components,
             lam,
+            alpha,
             flexible_label_matrix,
             class_imbalance,
             batch_size,
@@ -50,9 +51,13 @@ class FastSeparatedSummitNMF(SummitNMFBase):
             num_workers,
             save_loss_interval,
         )
-        self.alpha = alpha
 
-    def fit(self, X: ArrayLike, y: Union[Dict[str, Iterable[str | int]], ArrayLike], **kwargs):
+    def fit(
+        self,
+        X: ArrayLike,
+        y: Union[Dict[str, Iterable[str | int]], ArrayLike],
+        **kwargs,
+    ):
         W = kwargs.get("W", None)
         H = kwargs.get("H", None)
         Bs = kwargs.get("Bs", None)

@@ -38,6 +38,7 @@ class SeparatedSummitNMF(SummitNMFBase):
         super().__init__(
             n_components,
             lam,
+            alpha,
             flexible_label_matrix,
             class_imbalance,
             batch_size,
@@ -52,15 +53,19 @@ class SeparatedSummitNMF(SummitNMFBase):
             num_workers,
             save_loss_interval,
         )
-        self.alpha = alpha
 
-    def fit(self, X: ArrayLike, y: Union[Dict[str, Iterable[str | int]], ArrayLike], **kwargs):
+    def fit(
+        self,
+        X: ArrayLike,
+        y: Union[Dict[str, Iterable[str | int]], ArrayLike],
+        **kwargs,
+    ):
         W = kwargs.get("W", None)
         H = kwargs.get("H", None)
         Bs = kwargs.get("Bs", None)
 
         if isinstance(y, (np.ndarray, torch.Tensor)):
-                y = {f"cov_{i}": y[:, i] for i in range(y.shape[1])}
+            y = {f"cov_{i}": y[:, i] for i in range(y.shape[1])}
 
         self.dp = DataPreprocessor(
             n_components=self.n_components,
@@ -86,6 +91,7 @@ class SeparatedSummitNMF(SummitNMFBase):
         self.n_covariates = len(self.ref_Y_encoders)
         self.cov_names = list(self.ref_Y_encoders.keys())
         self.alpha = self._check_alpha(self.alpha)
+
         self.batch_size = (
             self.batch_size if self.batch_size is not None else len(dataset)
         )

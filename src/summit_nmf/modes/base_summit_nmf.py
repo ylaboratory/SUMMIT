@@ -13,6 +13,7 @@ class SummitNMFBase(ABC):
         self,
         n_components: int,
         lam: float,
+        alpha: Iterable[float],
         flexible_label_matrix: bool,
         class_imbalance: bool,
         batch_size: int,
@@ -29,6 +30,7 @@ class SummitNMFBase(ABC):
     ):
         self.n_components = n_components
         self.lam = lam
+        self.alpha = alpha
         self.max_iter = max_iter
         self.flexible_label_matrix = flexible_label_matrix
         self.class_imbalance = class_imbalance
