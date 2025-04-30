@@ -123,6 +123,12 @@ class Optimizer:
 
             for train_index, test_index in kf.split(X):
                 X_train, X_test = X[train_index], X[test_index]
+
+                # nan handlling
+                M_test = np.ones_like(X_test)
+                M_test[np.isnan(X_test)] = 0
+                X_test[np.isnan(X_test)] = 0
+
                 y_train = {key: labels[train_index] for key, labels in y.items()}
                 y_test = {key: labels[test_index] for key, labels in y.items()}
 
@@ -154,8 +160,8 @@ class Optimizer:
                 harmonic_losses.append(score)
 
                 recon_loss = np.linalg.norm(
-                    X_test - model.transform(X_test) @ model.H, ord="fro"
-                ) / np.linalg.norm(X_test, ord="fro")
+                    M_test * (X_test - model.transform(X_test) @ model.H), ord="fro"
+                ) / np.linalg.norm(M_test * X_test, ord="fro")
                 recon_losses.append(recon_loss)
 
             f1_scores = [f1 / self.n_cv_splits for f1 in f1_scores]

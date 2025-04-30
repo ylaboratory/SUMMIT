@@ -68,46 +68,49 @@ class SummitNMF:
 
         if model_type in ["separated", "s"]:
             return SeparatedSummitNMF(
-                n_components,
-                lam,
-                alpha,
-                flexible_label_matrix,
-                class_imbalance,
-                batch_size,
-                max_iter,
-                device,
-                random_state,
-                eps,
-                tol,
-                verbose,
-                dtype,
-                shuffle,
-                num_workers,
-                save_loss_interval,
+                n_components=n_components,
+                lam=lam,
+                alpha=alpha,
+                flexible_label_matrix=flexible_label_matrix,
+                class_imbalance=class_imbalance,
+                batch_size=batch_size,
+                max_iter=max_iter,
+                device=device,
+                random_state=random_state,
+                eps=eps,
+                tol=tol,
+                verbose=verbose,
+                dtype=dtype,
+                shuffle=shuffle,
+                num_workers=num_workers,
+                save_loss_interval=save_loss_interval,
             )
         elif model_type in ["unified", "u"]:
             return UnifiedSummitNMF(
-                n_components,
-                lam,
-                flexible_label_matrix,
-                class_imbalance,
-                batch_size,
-                max_iter,
-                device,
-                random_state,
-                eps,
-                tol,
-                verbose,
-                dtype,
-                shuffle,
-                num_workers,
-                save_loss_interval,
+                n_components=n_components,
+                lam=lam,
+                alpha=alpha,
+                flexible_label_matrix=flexible_label_matrix,
+                class_imbalance=class_imbalance,
+                batch_size=batch_size,
+                max_iter=max_iter,
+                device=device,
+                random_state=random_state,
+                eps=eps,
+                tol=tol,
+                verbose=verbose,
+                dtype=dtype,
+                shuffle=shuffle,
+                num_workers=num_workers,
+                save_loss_interval=save_loss_interval,
             )
         elif model_type in ["fast_separated", "fs"]:
-            print(
-                "Using FastSeparatedSummitNMF, please make sure the entire dataset can be loaded into device's memory.\n"
-                "The following parameters won't be used: batch_size, shuffle, and num_works."
-            )
+
+            if verbose:
+                print(
+                    "Using FastSeparatedSummitNMF, please make sure the entire dataset can be loaded into device's memory.\n"
+                    "The following parameters won't be used: batch_size, shuffle, and num_works."
+                )
 
             return FastSeparatedSummitNMF(
                 n_components,
@@ -128,14 +131,17 @@ class SummitNMF:
                 save_loss_interval,
             )
         elif model_type in ["fast_unified", "fu"]:
-            print(
-                "Using FastUnifiedSummitNMF, please make sure the entire dataset can be loaded into device's memory.\n"
-                "The following parameters won't be used: batch_size, shuffle, and num_workers."
-            )
+
+            if verbose:
+                print(
+                    "Using FastUnifiedSummitNMF, please make sure the entire dataset can be loaded into device's memory.\n"
+                    "The following parameters won't be used: batch_size, shuffle, and num_workers."
+                )
 
             return FastUnifiedSummitNMF(
                 n_components,
                 lam,
+                alpha,
                 flexible_label_matrix,
                 class_imbalance,
                 batch_size,

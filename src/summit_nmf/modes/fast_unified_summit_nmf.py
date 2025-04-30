@@ -37,22 +37,22 @@ class FastUnifiedSummitNMF(SummitNMFBase):
     ):
         device = device if device else torch.device("cpu")
         super().__init__(
-            n_components,
-            lam,
-            alpha,
-            flexible_label_matrix,
-            class_imbalance,
-            batch_size,
-            max_iter,
-            device,
-            random_state,
-            eps,
-            tol,
-            verbose,
-            dtype,
-            shuffle,
-            num_workers,
-            save_loss_interval,
+            n_components = n_components,
+            lam = lam,
+            alpha = alpha,
+            flexible_label_matrix = flexible_label_matrix,
+            class_imbalance = class_imbalance,
+            batch_size = batch_size,
+            max_iter = max_iter,
+            device = device,
+            random_state = random_state,
+            eps = eps,
+            tol = tol,
+            verbose = verbose,
+            dtype = dtype,
+            shuffle = shuffle,
+            num_workers = num_workers,
+            save_loss_interval = save_loss_interval,
         )
 
     def fit(
