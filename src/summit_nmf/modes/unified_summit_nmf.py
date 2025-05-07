@@ -23,7 +23,6 @@ class UnifiedSummitNMF(SummitNMFBase):
         n_components: int = 25,
         lam: float = 1,
         alpha: Iterable[float] = None,
-        flexible_label_matrix: bool = False,
         class_imbalance: bool = False,
         batch_size: int = None,
         max_iter: int = 200,
@@ -42,7 +41,6 @@ class UnifiedSummitNMF(SummitNMFBase):
             n_components,
             lam,
             alpha,
-            flexible_label_matrix,
             class_imbalance,
             batch_size,
             max_iter,
@@ -143,14 +141,6 @@ class UnifiedSummitNMF(SummitNMFBase):
                         Y=Ys_batch[i], W=W_batch, B=Bs[i], aYB=aYB, L=L_batch
                     )
 
-                # update Ys
-                if self.flexible_label_matrix:
-                    for i in range(self.n_covariates):
-                        aYB = self._compute_aYB(Ys_batch, Bs, L_batch)
-                        Ys_batch[i] = self._update_Y(
-                            Y=Ys_batch[i], W=W_batch, B=Bs[i], aYB=aYB, L=L_batch
-                        )
-
                 # update W
                 aYB = self._compute_aYB(Ys_batch, Bs, L_batch)
                 W_batch = self._update_W(
@@ -159,9 +149,6 @@ class UnifiedSummitNMF(SummitNMFBase):
 
                 # update to dataset
                 W[batch_idx] = W_batch
-                if self.flexible_label_matrix:
-                    for i in range(self.n_covariates):
-                        Ys[i][batch_idx] = Ys_batch[i]
 
             if iter_ % self.save_loss_interval == 0:
                 X_ref, M_ref = dataset.get_all_matrices()
@@ -259,13 +246,6 @@ class UnifiedSummitNMF(SummitNMFBase):
                     Ys_batch = [Y[batch_idx] for Y in Ys]
                     Ls_batch = [L[batch_idx] for L in Ls]
                     L = self._compute_L(Ls_batch)
-
-                    if self.flexible_label_matrix:
-                        aYB = self._compute_aYB(Ys_batch, Bs, L)
-                        Ys_batch = [
-                            self._update_Y(Y=Y, W=W, B=B, aYB=aYB, L=L)
-                            for Y, B in zip(Ys_batch, Bs)
-                        ]
 
                     aYB = self._compute_aYB(Ys_batch, Bs, L)
                     W_batch = self._update_W(
@@ -416,18 +396,12 @@ class UnifiedSummitNMF(SummitNMFBase):
         denominator = Y.T @ (L**2 * (aYB))
         return B * (numerator / torch.clamp(denominator, min=self.eps))
 
-    def _update_Y(self, Y, W, B, aYB, L):
-        numerator = (L**2 * W) @ B.T
-        denominator = (L**2 * (aYB)) @ B.T
-        return Y * (numerator / torch.clamp(denominator, min=self.eps))
-
     def __str__(self):
         return (
             "UnifiedSummitNMF(\n"
             f"  n_components={self.n_components},\n"
             f"  lam={self.lam},\n"
             f"  alpha={self.alpha},\n"
-            f"  flexible_label_matrix={self.flexible_label_matrix},\n"
             f"  class_imbalance={self.class_imbalance},\n"
             f"  batch_size={self.batch_size},\n"
             f"  max_iter={self.max_iter},\n"

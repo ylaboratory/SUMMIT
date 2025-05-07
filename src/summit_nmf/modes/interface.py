@@ -1,20 +1,79 @@
 import torch
 from typing import Iterable, Union
 
-from summit_nmf.modes.separated_summit_nmf import SeparatedSummitNMF
-from summit_nmf.modes.unified_summit_nmf import UnifiedSummitNMF
-from summit_nmf.modes.fast_separated_summit_nmf import FastSeparatedSummitNMF
-from summit_nmf.modes.fast_unified_summit_nmf import FastUnifiedSummitNMF
+from summit_nmf.modes.separated_summit_nmf import StandardSummitNMF
+from summit_nmf.modes.fast_separated_summit_nmf import FastSummitNMF
 
 
 class SummitNMF:
+    """
+    SummitNMF class provides a factory method to create instances of different 
+    SummitNMF modes, such as 'standard' or 'fast'.
+    Methods
+    -------
+    new(
+    ) -> Union[StandardSummitNMF, FastSummitNMF]
+        Factory method to create an instance of either StandardSummitNMF or 
+        FastSummitNMF based on the specified mode.
+        Parameters
+        ----------
+        mode : str, optional
+            The mode of the SummitNMF instance. Must be either 'standard' or 'fast'. 
+            Defaults to 'standard'.
+        n_components : int, optional
+            Number of components for the NMF model. Defaults to 25.
+        lam : float, optional
+            Regularization parameter. Defaults to 1.
+        alpha : Iterable[float], optional
+            Regularization weights for each component. Defaults to None.
+        class_imbalance : bool, optional
+            Whether to handle class imbalance. Defaults to False.
+        batch_size : int, optional
+            Batch size for training. Not used in 'fast' mode. Defaults to None.
+        max_iter : int, optional
+            Maximum number of iterations for training. Defaults to 200.
+        device : str, optional
+            Device to use for computation (e.g., 'cpu', 'cuda'). Defaults to None.
+        random_state : int, optional
+            Random seed for reproducibility. Defaults to None.
+        eps : float, optional
+            Small constant for numerical stability. Defaults to 1e-10.
+        tol : float, optional
+            Tolerance for convergence. Defaults to 1e-4.
+        verbose : bool, optional
+            Whether to print verbose output. Defaults to False.
+        dtype : torch.dtype, optional
+            Data type for computations. Defaults to torch.float32.
+        shuffle : bool, optional
+            Whether to shuffle data during training. Not used in 'fast' mode. 
+            Defaults to True.
+        num_workers : int, optional
+            Number of workers for data loading. Not used in 'fast' mode. 
+            Defaults to 0.
+        save_loss_interval : int, optional
+            Interval for saving loss values during training. Defaults to 5.
+        Returns
+        -------
+        Union[StandardSummitNMF, FastSummitNMF]
+            An instance of either StandardSummitNMF or FastSummitNMF, depending on 
+            the specified mode.
+        Raises
+        ------
+        ValueError
+            If an invalid mode is provided.
+        Notes
+        -----
+        - In 'fast' mode, the entire dataset must fit into the device's memory. 
+          Parameters such as `batch_size`, `shuffle`, and `num_workers` are ignored.
+        - In 'standard' mode, the model supports batch processing and shuffling.
+    """
+
     @staticmethod
-    def create_summit_nmf(
-        model_type: str = "fast_separated",
+    def new (
+        mode: str = "standard",
         n_components: int = 25,
         lam: float = 1,
         alpha: Iterable[float] = None,
-        flexible_label_matrix: bool = False,
         class_imbalance: bool = False,
         batch_size: int = None,
         max_iter: int = 200,
@@ -28,50 +87,42 @@ class SummitNMF:
         num_workers: int = 0,
         save_loss_interval: int = 5,
     ) -> Union[
-        SeparatedSummitNMF,
-        UnifiedSummitNMF,
-        FastSeparatedSummitNMF,
-        FastUnifiedSummitNMF,
+        StandardSummitNMF,
+        FastSummitNMF,
     ]:
         """
-        Factory function to create a Summit NMF model instance based on the specified model type.
-
+        Creates a new instance of either `StandardSummitNMF` or `FastSummitNMF` based on the specified mode.
         Parameters:
-            model_type (str): The type of model to create. Options are:
-                - "separated" or "s": Creates a SeparatedSummitNMF instance.
-                - "unified" or "u": Creates a UnifiedSummitNMF instance.
-                - "fast_separated" or "fs": Creates a FastSeparatedSummitNMF instance.
-                - "fast_unified" or "fu": Creates a FastUnifiedSummitNMF instance.
+            mode (str): The mode of the NMF algorithm to use. Must be either "standard" or "fast". Default is "standard".
             n_components (int): Number of components for the NMF model. Default is 25.
             lam (float): Regularization parameter. Default is 1.
-            alpha (Iterable[float], optional): Regularization weights for the separated model. Default is None.
-            flexible_label_matrix (bool): Whether to use a flexible label matrix. Default is False.
+            alpha (Iterable[float], optional): Regularization parameters for each component. Default is None.
             class_imbalance (bool): Whether to account for class imbalance. Default is False.
-            batch_size (int, optional): Batch size for training. Default is None.
-            max_iter (int): Maximum number of iterations for training. Default is 200.
-            device (str, optional): Device to use for computation (e.g., "cpu" or "cuda"). Default is None.
-            random_state (int, optional): Random seed for reproducibility. Default is None.
+            batch_size (int, optional): Batch size for processing data. Only used in "standard" mode. Default is None.
+            max_iter (int): Maximum number of iterations for the algorithm. Default is 200.
+            device (str, optional): Device to run the computation on (e.g., "cpu" or "cuda"). Default is None.
+            random_state (int, optional): Seed for random number generation. Default is None.
             eps (float): Small constant to avoid division by zero. Default is 1e-10.
             tol (float): Tolerance for convergence. Default is 1e-4.
-            verbose (bool): Whether to print verbose output during training. Default is False.
-            dtype (torch.dtype): Data type for computations. Default is torch.float32.
-            shuffle (bool): Whether to shuffle data during training. Default is True.
-            num_workers (int): Number of workers for data loading. Default is 0.
-
+            verbose (bool): Whether to print progress messages. Default is False.
+            dtype (torch.dtype): Data type for computations. Default is `torch.float32`.
+            shuffle (bool): Whether to shuffle data during training. Only used in "standard" mode. Default is True.
+            num_workers (int): Number of workers for data loading. Only used in "standard" mode. Default is 0.
+            save_loss_interval (int): Interval for saving loss values during training. Default is 5.
         Returns:
-            Union[SeparatedSummitNMF, UnifiedSummitNMF, FastSeparatedSummitNMF, FastUnifiedSummitNMF]:
-                An instance of the specified Summit NMF model.
-
+            Union[StandardSummitNMF, FastSummitNMF]: An instance of the selected NMF model.
         Raises:
-            ValueError: If an invalid `model_type` is provided.
+            ValueError: If the specified mode is not "standard" or "fast".
+        Notes:
+            - In "fast" mode, the entire dataset must fit into the device's memory. Parameters such as `batch_size`, 
+              `shuffle`, and `num_workers` are ignored.
         """
 
-        if model_type in ["separated", "s"]:
-            return SeparatedSummitNMF(
+        if mode == "standard":
+            return StandardSummitNMF(
                 n_components=n_components,
                 lam=lam,
                 alpha=alpha,
-                flexible_label_matrix=flexible_label_matrix,
                 class_imbalance=class_imbalance,
                 batch_size=batch_size,
                 max_iter=max_iter,
@@ -85,78 +136,33 @@ class SummitNMF:
                 num_workers=num_workers,
                 save_loss_interval=save_loss_interval,
             )
-        elif model_type in ["unified", "u"]:
-            return UnifiedSummitNMF(
-                n_components=n_components,
-                lam=lam,
-                alpha=alpha,
-                flexible_label_matrix=flexible_label_matrix,
-                class_imbalance=class_imbalance,
-                batch_size=batch_size,
-                max_iter=max_iter,
-                device=device,
-                random_state=random_state,
-                eps=eps,
-                tol=tol,
-                verbose=verbose,
-                dtype=dtype,
-                shuffle=shuffle,
-                num_workers=num_workers,
-                save_loss_interval=save_loss_interval,
-            )
-        elif model_type in ["fast_separated", "fs"]:
+        
+        elif mode == "fast":
 
             if verbose:
                 print(
-                    "Using FastSeparatedSummitNMF, please make sure the entire dataset can be loaded into device's memory.\n"
+                    "Using FastSummitNMF, please make sure the entire dataset can be loaded into device's memory.\n"
                     "The following parameters won't be used: batch_size, shuffle, and num_works."
                 )
 
-            return FastSeparatedSummitNMF(
-                n_components,
-                lam,
-                alpha,
-                flexible_label_matrix,
-                class_imbalance,
-                batch_size,
-                max_iter,
-                device,
-                random_state,
-                eps,
-                tol,
-                verbose,
-                dtype,
-                shuffle,
-                num_workers,
-                save_loss_interval,
-            )
-        elif model_type in ["fast_unified", "fu"]:
-
-            if verbose:
-                print(
-                    "Using FastUnifiedSummitNMF, please make sure the entire dataset can be loaded into device's memory.\n"
-                    "The following parameters won't be used: batch_size, shuffle, and num_workers."
-                )
-
-            return FastUnifiedSummitNMF(
-                n_components,
-                lam,
-                alpha,
-                flexible_label_matrix,
-                class_imbalance,
-                batch_size,
-                max_iter,
-                device,
-                random_state,
-                eps,
-                tol,
-                verbose,
-                dtype,
-                shuffle,
-                num_workers,
-                save_loss_interval,
+            return FastSummitNMF(
+                n_components=n_components,
+                lam=lam,
+                alpha=alpha,
+                class_imbalance=class_imbalance,
+                batch_size=batch_size,
+                max_iter=max_iter,
+                device=device,
+                random_state=random_state,
+                eps=eps,
+                tol=tol,
+                verbose=verbose,
+                dtype=dtype,
+                shuffle=shuffle,
+                num_workers=num_workers,
+                save_loss_interval=save_loss_interval,
             )
         else:
             raise ValueError(
-                f"Invalid model_type '{model_type}'. Must be 'separated', 's', 'unified', 'u', 'fast_separated', or 'fs'."
+                f"Invalid mode '{mode}'. Must be 'standard' and 'fast'."
             )

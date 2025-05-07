@@ -21,7 +21,6 @@ class FastUnifiedSummitNMF(SummitNMFBase):
         n_components: int = 25,
         lam: float = 1,
         alpha: Iterable[float] = None,
-        flexible_label_matrix: bool = False,
         class_imbalance: bool = False,
         batch_size: int = None,
         max_iter: int = 200,
@@ -40,7 +39,6 @@ class FastUnifiedSummitNMF(SummitNMFBase):
             n_components = n_components,
             lam = lam,
             alpha = alpha,
-            flexible_label_matrix = flexible_label_matrix,
             class_imbalance = class_imbalance,
             batch_size = batch_size,
             max_iter = max_iter,
@@ -115,11 +113,6 @@ class FastUnifiedSummitNMF(SummitNMFBase):
                 aYB = self._compute_aYB(Ys, Bs, L)
                 Bs[i] = self._update_B(Y=Ys[i], W=W, B=Bs[i], aYB=aYB, L=L)
 
-            # update Ys
-            if self.flexible_label_matrix:
-                for i in range(self.n_covariates):
-                    aYB = self._compute_aYB(Ys, Bs, L)
-                    Ys[i] = self._update_Y(Y=Ys[i], W=W, B=Bs[i], aYB=aYB, L=L)
 
             # update W
             aYB = self._compute_aYB(Ys, Bs, L)
@@ -198,13 +191,7 @@ class FastUnifiedSummitNMF(SummitNMFBase):
         )
         for iter_ in progress_bar:
             if y is not None:
-                if self.flexible_label_matrix:
-                    aYB = self._compute_aYB(Ys, Bs, L)
-                    Ys = [
-                        self._update_Y(Y=Y, W=W, B=B, aYB=aYB, L=L)
-                        for Y, B in zip(Ys, Bs)
-                    ]
-
+                
                 aYB = self._compute_aYB(Ys, Bs, L)
                 W = self._update_W(X=X, W=W, H=H, aYB=aYB, M=M, L=L)
             else:
@@ -346,18 +333,12 @@ class FastUnifiedSummitNMF(SummitNMFBase):
         denominator = Y.T @ (L**2 * (aYB))
         return B * (numerator / torch.clamp(denominator, min=self.eps))
 
-    def _update_Y(self, Y, W, B, aYB, L):
-        numerator = (L**2 * W) @ B.T
-        denominator = (L**2 * (aYB)) @ B.T
-        return Y * (numerator / torch.clamp(denominator, min=self.eps))
-
     def __str__(self):
         return (
             "FastUnifiedSummitNMF(\n"
             f"  n_components={self.n_components},\n"
             f"  lam={self.lam},\n"
             f"  alpha={self.alpha},\n"
-            f"  flexible_label_matrix={self.flexible_label_matrix},\n"
             f"  class_imbalance={self.class_imbalance},\n"
             f"  max_iter={self.max_iter},\n"
             f"  device={self.device},\n"

@@ -3,6 +3,7 @@ from torch.utils.data import Dataset
 
 
 class summit_dataset(Dataset):
+    
     def __init__(
         self,
         X: torch.Tensor,
@@ -15,8 +16,8 @@ class summit_dataset(Dataset):
         return self.X.shape[0]
 
     def __getitem__(self, idx):
-        X_sample = self.X[idx]  # CPU tensor
-        M_sample = self.M[idx]  # GPU tensor
+        X_sample = self.X[idx]
+        M_sample = self.M[idx]
 
         return X_sample, M_sample, idx
 

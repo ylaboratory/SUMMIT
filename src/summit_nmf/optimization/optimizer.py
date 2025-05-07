@@ -5,20 +5,17 @@ import torch
 
 from sklearn.metrics import f1_score
 from sklearn.model_selection import KFold
-from summit_nmf.modes.separated_summit_nmf import SeparatedSummitNMF
-from summit_nmf.modes.fast_separated_summit_nmf import FastSeparatedSummitNMF
-from summit_nmf.modes.unified_summit_nmf import UnifiedSummitNMF
-from summit_nmf.modes.fast_unified_summit_nmf import FastUnifiedSummitNMF
+from summit_nmf.modes.separated_summit_nmf import StandardSummitNMF
+from summit_nmf.modes.fast_separated_summit_nmf import FastSummitNMF
 from typing import Dict, Union
 
 
 class Optimizer:
     def __init__(
         self,
-        model_type: str,
+        mode: str,
         n_trials: int = 100,
         n_cv_splits: int = 3,
-        flexible_label_matrix: bool = False,
         class_imbalance: bool = False,
         batch_size: int = None,
         max_iter: int = 200,
@@ -31,10 +28,9 @@ class Optimizer:
         num_workers: int = 0,
         weight_n_comp: float = 0,
     ):
-        self.model_type = model_type
+        self.mode = mode
         self.n_trials = n_trials
         self.n_cv_splits = n_cv_splits
-        self.flexible_label_matrix = flexible_label_matrix
         self.class_imbalance = class_imbalance
         self.batch_size = batch_size
         self.max_iter = max_iter
@@ -48,26 +44,15 @@ class Optimizer:
         self.weight_n_comp = weight_n_comp
 
         # Initialize the appropriate optimizer based on the model type
-        if self.model_type in ["unified", "u"]:
-            self.model_class = UnifiedSummitNMF
-
-        elif self.model_type in ["separated", "s"]:
-            self.model_class = SeparatedSummitNMF
-
-        elif self.model_type in ["fast_unified", "fu"]:
-            UserWarning(
-                "Using FastSeparatedSummitNMF, please make sure the dataset can be loaded into device's memory. The batch_size is set to the entire dataset."
-            )
-            self.model_class = FastUnifiedSummitNMF
-
-        elif self.model_type in ["fast_separated", "fs"]:
-            UserWarning(
-                "Using FastSeparatedSummitNMF, please make sure the dataset can be loaded into device's memory. The batch_size is set to the entire dataset."
-            )
-            self.model_class = FastSeparatedSummitNMF
-
-        else:
-            raise ValueError(f"Unsupported model type: {self.model_type}")
+        match self.mode:
+            case "standard":
+                self.model_class = StandardSummitNMF
+            case "fast":
+                self.model_class = FastSummitNMF
+            case _:
+                raise ValueError(f"Unsupported model type: {self.mode}")
+        
+        
 
     def search(
         self, X, y, n_components_range=(5, 50), lam_range=(1e-2, 1e2)
@@ -102,7 +87,6 @@ class Optimizer:
                 "lam": lam,
                 "alpha": alphas,
                 "max_iter": self.max_iter,
-                "flexible_label_matrix": self.flexible_label_matrix,
                 "class_imbalance": self.class_imbalance,
                 "batch_size": self.batch_size,
                 "eps": self.eps,
@@ -190,7 +174,6 @@ class Optimizer:
             "n_components": study.best_params["n_components"],
             "lam": study.best_params["lam"],
             "alpha": best_alphas,
-            "flexible_label_matrix": self.flexible_label_matrix,
             "class_imbalance": self.class_imbalance,
             "batch_size": self.batch_size,
             "max_iter": self.max_iter,
@@ -226,7 +209,7 @@ class Optimizer:
         return pd.DataFrame(report_data)
 
     def __repr__(self):
-        return f"Optimizer(model_class={self.model_class.__name__}, n_trials={self.n_trials}, n_cv_splits={self.n_cv_splits}, flexible_label_matrix={self.flexible_label_matrix}, class_imbalance={self.class_imbalance}, batch_size={self.batch_size}, max_iter={self.max_iter}, device={self.device}, random_state={self.random_state}, eps={self.eps}, tol={self.tol}, dtype={self.dtype}, shuffle={self.shuffle}, num_workers={self.num_workers})"
+        return f"Optimizer(model_class={self.model_class.__name__}, n_trials={self.n_trials}, n_cv_splits={self.n_cv_splits}, class_imbalance={self.class_imbalance}, batch_size={self.batch_size}, max_iter={self.max_iter}, device={self.device}, random_state={self.random_state}, eps={self.eps}, tol={self.tol}, dtype={self.dtype}, shuffle={self.shuffle}, num_workers={self.num_workers})"
 
     def __str__(self):
-        return f"Optimizer(model_class={self.model_class.__name__}, n_trials={self.n_trials}, n_cv_splits={self.n_cv_splits}, flexible_label_matrix={self.flexible_label_matrix}, class_imbalance={self.class_imbalance}, batch_size={self.batch_size}, max_iter={self.max_iter}, device={self.device}, random_state={self.random_state}, eps={self.eps}, tol={self.tol}, dtype={self.dtype}, shuffle={self.shuffle}, num_workers={self.num_workers})"
+        return f"Optimizer(model_class={self.model_class.__name__}, n_trials={self.n_trials}, n_cv_splits={self.n_cv_splits}, class_imbalance={self.class_imbalance}, batch_size={self.batch_size}, max_iter={self.max_iter}, device={self.device}, random_state={self.random_state}, eps={self.eps}, tol={self.tol}, dtype={self.dtype}, shuffle={self.shuffle}, num_workers={self.num_workers})"

@@ -14,13 +14,12 @@ from summit_nmf.utils.dataset import summit_dataset
 ArrayLike = Union[np.ndarray, torch.Tensor]
 
 
-class SeparatedSummitNMF(SummitNMFBase):
+class StandardSummitNMF(SummitNMFBase):
     def __init__(
         self,
         n_components: int = 25,
         lam: float = 1,
         alpha: Iterable[float] = None,
-        flexible_label_matrix: bool = False,
         class_imbalance: bool = False,
         batch_size: int = None,
         max_iter: int = 200,
@@ -39,7 +38,6 @@ class SeparatedSummitNMF(SummitNMFBase):
             n_components,
             lam,
             alpha,
-            flexible_label_matrix,
             class_imbalance,
             batch_size,
             max_iter,
@@ -80,6 +78,7 @@ class SeparatedSummitNMF(SummitNMFBase):
         H = H.to(self.device)
         Bs = [B.to(self.device) for B in Bs]
         Ls = [L.to(self.device) for L in Ls]
+        Rs = [torch.rand(1, self.n_components, dtype=self.dtype, device=self.device) for _ in range(len(Ls))]
 
         dataset = summit_dataset(X=X, M=M)
 
@@ -133,16 +132,12 @@ class SeparatedSummitNMF(SummitNMFBase):
 
                 # update Bs
                 Bs = [
-                    self._update_B(Y=Y, W=W_batch, B=B, L=L)
-                    for Y, B, L in zip(Ys_batch, Bs, Ls_batch)
+                    self._update_B(Y=Y, W=W_batch, B=B, R=R, L=L)
+                    for Y, B, R, L in zip(Ys_batch, Bs, Rs, Ls_batch)
                 ]
 
-                # update Ys
-                if self.flexible_label_matrix:
-                    Ys_batch = [
-                        self._update_Y(Y=Y, W=W, B=B, L=L)
-                        for Y, B, L in zip(Ys_batch, Bs, Ls_batch)
-                    ]
+                # update Rs
+                Rs = [self._update_R(Y=Y, W=W_batch, B=B, R=R, L=L) for Y, B, R, L in zip(Ys_batch, Bs, Rs, Ls_batch)]
 
                 # update W
                 W_batch = self._update_W(
@@ -151,15 +146,13 @@ class SeparatedSummitNMF(SummitNMFBase):
                     W=W_batch,
                     H=H,
                     Bs=Bs,
+                    Rs=Rs,
                     M=M_batch,
                     Ls=Ls_batch,
                 )
 
                 # update dataset
                 W[batch_idx] = W_batch
-                if self.flexible_label_matrix:
-                    for i in range(self.n_covariates):
-                        Ys[i][batch_idx] = Ys_batch[i]
 
             # compute and save the loss
             if iter_ % self.save_loss_interval == 0:
@@ -167,11 +160,12 @@ class SeparatedSummitNMF(SummitNMFBase):
                 W_copy = W.clone().cpu()
                 H_copy = H.clone().cpu()
                 Bs_copy = [B.clone().cpu() for B in Bs]
+                Rs_copy = [R.clone().cpu() for R in Rs]
                 Ys_copy = [Y.clone().cpu() for Y in Ys]
                 Ls_copy = [L.clone().cpu() for L in Ls]
                 reconstruction_loss, harmonic_loss, ind_harmonic_loss, total_loss = (
                     self._compute_loss(
-                        X_ref, Ys_copy, W_copy, H_copy, Bs_copy, M_ref, Ls_copy
+                        X_ref, Ys_copy, W_copy, H_copy, Bs_copy, Rs_copy, M_ref, Ls_copy
                     )
                 )
                 self.loss_history_["reconstruction"].append(reconstruction_loss)
@@ -202,6 +196,7 @@ class SeparatedSummitNMF(SummitNMFBase):
         self.H = H.cpu().numpy()
         self.M = M.numpy()
         self.Bs = [B.cpu().numpy() for B in Bs]
+        self.Rs = [R.cpu().numpy() for R in Rs]
         self.Ys = [Y.cpu().numpy() for Y in Ys]
         self.Ls = [L.cpu().numpy() for L in Ls]
         return self
@@ -222,7 +217,7 @@ class SeparatedSummitNMF(SummitNMFBase):
 
         H = torch.tensor(self.H, dtype=self.dtype).to(self.device)
         Bs = [torch.tensor(B, dtype=self.dtype).to(self.device) for B in self.Bs]
-
+        Rs = [torch.tensor(R, dtype=self.dtype).to(self.device) for R in self.Rs]
         if y is None:
             X, W, M = self.dp.transform(X)
             Ys = [
@@ -263,18 +258,13 @@ class SeparatedSummitNMF(SummitNMFBase):
                 M_batch = M_batch.to(self.device, non_blocking=True)
 
                 if y is not None:
-                    if self.flexible_label_matrix:
-                        Ys_batch = [
-                            self._update_Y(Y=Y, W=W, B=B, L=L)
-                            for Y, B, L in zip(Ys_batch, Bs, Ls_batch)
-                        ]
-
                     W_batch = self._update_W(
                         X=X_batch,
                         Ys=Ys_batch,
                         W=W_batch,
                         H=H,
                         Bs=Bs,
+                        Rs=Rs,
                         M=M_batch,
                         Ls=Ls_batch,
                     )
@@ -327,6 +317,7 @@ class SeparatedSummitNMF(SummitNMFBase):
             "H": deepcopy(self.H),
             "M": deepcopy(self.M),
             "Bs": deepcopy(self.Bs),
+            "Rs": deepcopy(self.Rs),
             "Ys": deepcopy(self.Ys),
             "Ls": deepcopy(self.Ls),
         }
@@ -361,19 +352,20 @@ class SeparatedSummitNMF(SummitNMFBase):
     def _compute_reconstruction_loss(self, X, W, H, M):
         return torch.norm(M * (X - W @ H)).item() ** 2
 
-    def _compute_harmonic_loss(self, Ys, W, Bs, Ls):
+    def _compute_harmonic_loss(self, Ys, W, Bs, Rs, Ls):
         total_loss = 0
         ind_loss = [0] * self.n_covariates
         for i in range(self.n_covariates):
+            Y_R = torch.ones((Ys[i].shape[0], 1), dtype=self.dtype, device=self.device)
             ind_loss[i] = (
-                self.alpha[i] * torch.norm(Ls[i] * (W - Ys[i] @ Bs[i])).item() ** 2
+                self.alpha[i] * torch.norm(Ls[i] * (W - Ys[i] @ Bs[i] - Y_R @ Rs[i])).item() ** 2
             )
             total_loss += ind_loss[i]
         return total_loss, ind_loss
 
-    def _compute_loss(self, X, Ys, W, H, Bs, M, Ls):
+    def _compute_loss(self, X, Ys, W, H, Bs, Rs, M, Ls):
         reconstruction_loss = self._compute_reconstruction_loss(X, W, H, M)
-        total_pred_loss, ind_pred_loss = self._compute_harmonic_loss(Ys, W, Bs, Ls)
+        total_pred_loss, ind_pred_loss = self._compute_harmonic_loss(Ys, W, Bs, Rs, Ls)
         return (
             reconstruction_loss,
             total_pred_loss,
@@ -381,13 +373,14 @@ class SeparatedSummitNMF(SummitNMFBase):
             reconstruction_loss + self.lam * total_pred_loss,
         )
 
-    def _update_W(self, X, Ys, W, H, Bs, M, Ls):
+    def _update_W(self, X, Ys, W, H, Bs, Rs, M, Ls):
         recon_num = (M**2 * X) @ H.T
         recon_den = (M**2 * (W @ H)) @ H.T
 
         pred_num, pred_den = 0, 0
-        for Y, B, L, alpha in zip(Ys, Bs, Ls, self.alpha):
-            pred_num += alpha * L**2 * (Y @ B)
+        for Y, B, R, L, alpha in zip(Ys, Bs, Rs, Ls, self.alpha):
+            Y_R = torch.ones((Y.shape[0], 1), dtype=self.dtype, device=self.device)
+            pred_num += alpha * L**2 * (Y @ B + Y_R @ R)
             pred_den += alpha * L**2 * W
 
         numerator = recon_num + self.lam * pred_num
@@ -399,23 +392,24 @@ class SeparatedSummitNMF(SummitNMFBase):
         denominator = W.T @ (M**2 * (W @ H))
         return H * (numerator / torch.clamp(denominator, min=self.eps))
 
-    def _update_B(self, Y, W, B, L):
+    def _update_B(self, Y, W, B, R, L):
+        Y_R = torch.ones((Y.shape[0], 1), dtype=self.dtype, device=self.device)
         numerator = Y.T @ (L**2 * W)
-        denominator = Y.T @ (L**2 * (Y @ B))
+        denominator = Y.T @ (L**2 * (Y @ B + Y_R @ R))
         return B * (numerator / torch.clamp(denominator, min=self.eps))
 
-    def _update_Y(self, Y, W, B, L):
-        numerator = (L**2 * W) @ B.T
-        denominator = (L**2 * (Y @ B)) @ B.T
-        return Y * (numerator / torch.clamp(denominator, min=self.eps))
+    def _update_R(self, Y, W, B, R, L):
+        Y_R = torch.ones((Y.shape[0], 1), dtype=self.dtype, device=self.device)
+        numerator = Y_R.T @ (L**2 * W)
+        denominator = Y_R.T @ (L**2 * (Y @ B + Y_R @ R))
+        return R * (numerator / torch.clamp(denominator, min=self.eps))
 
     def __str__(self):
         return (
-            "SeparatedSummitNMF(\n"
+            "StandardSummitNMF(\n"
             f"  n_components={self.n_components},\n"
             f"  lam={self.lam},\n"
             f"  alpha={self.alpha},\n"
-            f"  flexible_label_matrix={self.flexible_label_matrix},\n"
             f"  class_imbalance={self.class_imbalance},\n"
             f"  batch_size={self.batch_size},\n"
             f"  max_iter={self.max_iter},\n"

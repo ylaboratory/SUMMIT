@@ -14,7 +14,6 @@ class SummitNMFBase(ABC):
         n_components: int,
         lam: float,
         alpha: Iterable[float],
-        flexible_label_matrix: bool,
         class_imbalance: bool,
         batch_size: int,
         max_iter: int,
@@ -32,7 +31,6 @@ class SummitNMFBase(ABC):
         self.lam = lam
         self.alpha = alpha
         self.max_iter = max_iter
-        self.flexible_label_matrix = flexible_label_matrix
         self.class_imbalance = class_imbalance
         self.batch_size = batch_size
         self.device = device if device else torch.device("cpu")
