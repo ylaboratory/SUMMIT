@@ -1,24 +1,24 @@
 import torch
 from typing import Iterable, Union
 
-from summit_nmf.modes.separated_summit_nmf import StandardSummitNMF
-from summit_nmf.modes.fast_separated_summit_nmf import FastSummitNMF
+from summit_nmf.modes.standard_summit_nmf import StandardSummitNMF
+from summit_nmf.modes.fast_summit_nmf import FastSummitNMF
 
 
 class SummitNMF:
     """
-    SummitNMF class provides a factory method to create instances of different 
+    SummitNMF class provides a factory method to create instances of different
     SummitNMF modes, such as 'standard' or 'fast'.
     Methods
     -------
     new(
     ) -> Union[StandardSummitNMF, FastSummitNMF]
-        Factory method to create an instance of either StandardSummitNMF or 
+        Factory method to create an instance of either StandardSummitNMF or
         FastSummitNMF based on the specified mode.
         Parameters
         ----------
         mode : str, optional
-            The mode of the SummitNMF instance. Must be either 'standard' or 'fast'. 
+            The mode of the SummitNMF instance. Must be either 'standard' or 'fast'.
             Defaults to 'standard'.
         n_components : int, optional
             Number of components for the NMF model. Defaults to 25.
@@ -45,17 +45,17 @@ class SummitNMF:
         dtype : torch.dtype, optional
             Data type for computations. Defaults to torch.float32.
         shuffle : bool, optional
-            Whether to shuffle data during training. Not used in 'fast' mode. 
+            Whether to shuffle data during training. Not used in 'fast' mode.
             Defaults to True.
         num_workers : int, optional
-            Number of workers for data loading. Not used in 'fast' mode. 
+            Number of workers for data loading. Not used in 'fast' mode.
             Defaults to 0.
         save_loss_interval : int, optional
             Interval for saving loss values during training. Defaults to 5.
         Returns
         -------
         Union[StandardSummitNMF, FastSummitNMF]
-            An instance of either StandardSummitNMF or FastSummitNMF, depending on 
+            An instance of either StandardSummitNMF or FastSummitNMF, depending on
             the specified mode.
         Raises
         ------
@@ -63,13 +63,13 @@ class SummitNMF:
             If an invalid mode is provided.
         Notes
         -----
-        - In 'fast' mode, the entire dataset must fit into the device's memory. 
+        - In 'fast' mode, the entire dataset must fit into the device's memory.
           Parameters such as `batch_size`, `shuffle`, and `num_workers` are ignored.
         - In 'standard' mode, the model supports batch processing and shuffling.
     """
 
     @staticmethod
-    def new (
+    def new(
         mode: str = "standard",
         n_components: int = 25,
         lam: float = 1,
@@ -114,7 +114,7 @@ class SummitNMF:
         Raises:
             ValueError: If the specified mode is not "standard" or "fast".
         Notes:
-            - In "fast" mode, the entire dataset must fit into the device's memory. Parameters such as `batch_size`, 
+            - In "fast" mode, the entire dataset must fit into the device's memory. Parameters such as `batch_size`,
               `shuffle`, and `num_workers` are ignored.
         """
 
@@ -136,9 +136,8 @@ class SummitNMF:
                 num_workers=num_workers,
                 save_loss_interval=save_loss_interval,
             )
-        
-        elif mode == "fast":
 
+        elif mode == "fast":
             if verbose:
                 print(
                     "Using FastSummitNMF, please make sure the entire dataset can be loaded into device's memory.\n"
@@ -163,6 +162,4 @@ class SummitNMF:
                 save_loss_interval=save_loss_interval,
             )
         else:
-            raise ValueError(
-                f"Invalid mode '{mode}'. Must be 'standard' and 'fast'."
-            )
+            raise ValueError(f"Invalid mode '{mode}'. Must be 'standard' and 'fast'.")

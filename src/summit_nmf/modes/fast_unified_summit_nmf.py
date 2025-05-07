@@ -36,21 +36,21 @@ class FastUnifiedSummitNMF(SummitNMFBase):
     ):
         device = device if device else torch.device("cpu")
         super().__init__(
-            n_components = n_components,
-            lam = lam,
-            alpha = alpha,
-            class_imbalance = class_imbalance,
-            batch_size = batch_size,
-            max_iter = max_iter,
-            device = device,
-            random_state = random_state,
-            eps = eps,
-            tol = tol,
-            verbose = verbose,
-            dtype = dtype,
-            shuffle = shuffle,
-            num_workers = num_workers,
-            save_loss_interval = save_loss_interval,
+            n_components=n_components,
+            lam=lam,
+            alpha=alpha,
+            class_imbalance=class_imbalance,
+            batch_size=batch_size,
+            max_iter=max_iter,
+            device=device,
+            random_state=random_state,
+            eps=eps,
+            tol=tol,
+            verbose=verbose,
+            dtype=dtype,
+            shuffle=shuffle,
+            num_workers=num_workers,
+            save_loss_interval=save_loss_interval,
         )
 
     def fit(
@@ -112,7 +112,6 @@ class FastUnifiedSummitNMF(SummitNMFBase):
             for i in range(self.n_covariates):
                 aYB = self._compute_aYB(Ys, Bs, L)
                 Bs[i] = self._update_B(Y=Ys[i], W=W, B=Bs[i], aYB=aYB, L=L)
-
 
             # update W
             aYB = self._compute_aYB(Ys, Bs, L)
@@ -191,7 +190,6 @@ class FastUnifiedSummitNMF(SummitNMFBase):
         )
         for iter_ in progress_bar:
             if y is not None:
-                
                 aYB = self._compute_aYB(Ys, Bs, L)
                 W = self._update_W(X=X, W=W, H=H, aYB=aYB, M=M, L=L)
             else:

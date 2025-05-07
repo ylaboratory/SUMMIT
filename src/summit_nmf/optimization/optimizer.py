@@ -5,8 +5,8 @@ import torch
 
 from sklearn.metrics import f1_score
 from sklearn.model_selection import KFold
-from summit_nmf.modes.separated_summit_nmf import StandardSummitNMF
-from summit_nmf.modes.fast_separated_summit_nmf import FastSummitNMF
+from summit_nmf.modes.standard_summit_nmf import StandardSummitNMF
+from summit_nmf.modes.fast_summit_nmf import FastSummitNMF
 from typing import Dict, Union
 
 
@@ -50,9 +50,7 @@ class Optimizer:
             case "fast":
                 self.model_class = FastSummitNMF
             case _:
-                raise ValueError(f"Unsupported model type: {self.mode}")
-        
-        
+                raise ValueError(f"Unsupported model type: {self.mode}. Must be 'standard' or 'fast'.")
 
     def search(
         self, X, y, n_components_range=(5, 50), lam_range=(1e-2, 1e2)
@@ -161,7 +159,7 @@ class Optimizer:
             sampler=optuna.samplers.TPESampler(),
             pruner=optuna.pruners.MedianPruner(),
             direction="minimize",
-            study_name="multi-covariates optimization (SeparatedSummitNMF)",
+            study_name="multi-covariates optimization (SummitNMF)",
         )
         study.optimize(objective, n_trials=self.n_trials)
 

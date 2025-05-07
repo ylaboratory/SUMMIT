@@ -78,7 +78,10 @@ class StandardSummitNMF(SummitNMFBase):
         H = H.to(self.device)
         Bs = [B.to(self.device) for B in Bs]
         Ls = [L.to(self.device) for L in Ls]
-        Rs = [torch.rand(1, self.n_components, dtype=self.dtype, device=self.device) for _ in range(len(Ls))]
+        Rs = [
+            torch.rand(1, self.n_components, dtype=self.dtype, device=self.device)
+            for _ in range(len(Ls))
+        ]
 
         dataset = summit_dataset(X=X, M=M)
 
@@ -137,7 +140,10 @@ class StandardSummitNMF(SummitNMFBase):
                 ]
 
                 # update Rs
-                Rs = [self._update_R(Y=Y, W=W_batch, B=B, R=R, L=L) for Y, B, R, L in zip(Ys_batch, Bs, Rs, Ls_batch)]
+                Rs = [
+                    self._update_R(Y=Y, W=W_batch, B=B, R=R, L=L)
+                    for Y, B, R, L in zip(Ys_batch, Bs, Rs, Ls_batch)
+                ]
 
                 # update W
                 W_batch = self._update_W(
@@ -358,7 +364,8 @@ class StandardSummitNMF(SummitNMFBase):
         for i in range(self.n_covariates):
             Y_R = torch.ones((Ys[i].shape[0], 1), dtype=self.dtype, device=self.device)
             ind_loss[i] = (
-                self.alpha[i] * torch.norm(Ls[i] * (W - Ys[i] @ Bs[i] - Y_R @ Rs[i])).item() ** 2
+                self.alpha[i]
+                * torch.norm(Ls[i] * (W - Ys[i] @ Bs[i] - Y_R @ Rs[i])).item() ** 2
             )
             total_loss += ind_loss[i]
         return total_loss, ind_loss

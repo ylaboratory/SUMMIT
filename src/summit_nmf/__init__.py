@@ -1,4 +1,4 @@
-from .modes import SeparatedSummitNMF, UnifiedSummitNMF, SummitNMF
+from .modes import SummitNMF
 from .optimization import Optimizer
 
-__all__ = ["SeparatedSummitNMF", "UnifiedSummitNMF", "SummitNMF", "Optimizer"]
+__all__ = ["SummitNMF", "Optimizer"]

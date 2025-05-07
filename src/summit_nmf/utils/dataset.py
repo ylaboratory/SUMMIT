@@ -3,7 +3,6 @@ from torch.utils.data import Dataset
 
 
 class summit_dataset(Dataset):
-    
     def __init__(
         self,
         X: torch.Tensor,
