@@ -7,26 +7,26 @@ from sklearn.metrics import f1_score
 from sklearn.model_selection import KFold
 from summit_nmf.modes.standard_summit_nmf import StandardSummitNMF
 from summit_nmf.modes.fast_summit_nmf import FastSummitNMF
-from typing import Dict, Union
+from typing import Dict, Union, Optional
 
 
 class Optimizer:
     def __init__(
         self,
-        mode: str,
+        mode: str = "standard",
         n_trials: int = 100,
         n_cv_splits: int = 3,
         class_imbalance: bool = False,
-        batch_size: int = None,
+        batch_size: Optional[int] = None,
         max_iter: int = 200,
-        device: str = None,
-        random_state: int = None,
+        f1_average: str = "weighted",
+        device: Optional[str] = None,
+        random_state: Optional[int] = None,
         eps: float = 1e-10,
         tol: float = 1e-4,
         dtype: torch.dtype = torch.float32,
         shuffle: bool = True,
         num_workers: int = 0,
-        weight_n_comp: float = 0,
     ):
         self.mode = mode
         self.n_trials = n_trials
@@ -34,6 +34,7 @@ class Optimizer:
         self.class_imbalance = class_imbalance
         self.batch_size = batch_size
         self.max_iter = max_iter
+        self.f1_average = f1_average
         self.device = device
         self.random_state = random_state
         self.eps = eps
@@ -41,7 +42,6 @@ class Optimizer:
         self.dtype = dtype
         self.shuffle = shuffle
         self.num_workers = num_workers
-        self.weight_n_comp = weight_n_comp
 
         # Initialize the appropriate optimizer based on the model type
         match self.mode:
@@ -50,15 +50,27 @@ class Optimizer:
             case "fast":
                 self.model_class = FastSummitNMF
             case _:
-                raise ValueError(f"Unsupported model type: {self.mode}. Must be 'standard' or 'fast'.")
+                raise ValueError(
+                    f"Unsupported model type: {self.mode}. Must be 'standard' or 'fast'."
+                )
 
     def search(
         self, X, y, n_components_range=(5, 50), lam_range=(1e-2, 1e2)
     ) -> Dict[str, Union[str, int, float]]:
         # y input preprocessing
         if isinstance(y, (np.ndarray, torch.Tensor)):
-            y = {f"cov{i}": y[:, i] for i in range(y.shape[1])}
+            if y.ndim == 1:
+                y = {"cov_0": y}
+            else:
+                y = {f"cov_{i}": y[:, i] for i in range(y.shape[1])}
+        elif isinstance(y, pd.DataFrame):
+            y = {col: y[col].values for col in y.columns}
+
         self.covariates = list(y.keys())
+
+        kf = KFold(
+            n_splits=self.n_cv_splits, shuffle=True, random_state=self.random_state
+        )
 
         def objective(trial):
             n_components = trial.suggest_int(
@@ -96,9 +108,6 @@ class Optimizer:
                 "num_workers": self.num_workers,
             }
 
-            kf = KFold(
-                n_splits=self.n_cv_splits, shuffle=True, random_state=self.random_state
-            )
             harmonic_losses = []
             recon_losses = []
             f1_scores = [0] * len(y)
@@ -120,23 +129,20 @@ class Optimizer:
                 y_pred = model.predict(X_test)
                 score = 0
                 for i, key in enumerate(y_pred.keys()):
-                    non_nan_indices = np.array(
-                        [
-                            i
-                            for i, val in enumerate(y_test[key])
-                            if val is not None and val == val
-                        ]
-                    )
-                    score += f1_score(
+                    non_nan_indices = np.where(
+                        (y_test[key] is not None) & (~pd.isna(y_test[key]))
+                    )[0]
+
+                    score += alphas[i] * f1_score(
                         y_test[key][non_nan_indices],
                         y_pred[key][non_nan_indices],
-                        average="weighted",
+                        average=self.f1_average,
                     )
 
                     f1_scores[i] += f1_score(
                         y_test[key][non_nan_indices],
                         y_pred[key][non_nan_indices],
-                        average="weighted",
+                        average=self.f1_average,
                     )
 
                 harmonic_losses.append(score)
@@ -152,11 +158,13 @@ class Optimizer:
 
             harmonic_mean = np.mean(harmonic_losses)
             recon_mean = np.mean(recon_losses)
+            trial.set_user_attr(f"recon_error", recon_mean)
 
-            return recon_mean - harmonic_mean + self.weight_n_comp * n_components
+            return recon_mean - harmonic_mean
 
         study = optuna.create_study(
             sampler=optuna.samplers.TPESampler(),
+            # sampler=optuna.samplers.RandomSampler(),
             pruner=optuna.pruners.MedianPruner(),
             direction="minimize",
             study_name="multi-covariates optimization (SummitNMF)",
@@ -165,7 +173,7 @@ class Optimizer:
 
         best_alphas = []
         for i in range(len(y)):
-            best_alphas.append(study.best_params[f"unnormalized_alpha_{i}"])
+            best_alphas.append(-np.log10(study.best_params[f"unnormalized_alpha_{i}"]))
         best_alphas = [a / sum(best_alphas) for a in best_alphas]
 
         best_params = {
