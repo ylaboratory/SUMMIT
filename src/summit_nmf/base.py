@@ -21,8 +21,8 @@ class SummitNMFBase(ABC):
         eps: float,
         tol: float,
         dtype: torch.dtype,
-        shuffle: bool,
         save_loss_interval: int,
+        verbose: bool
     ):
         self._validate_init_params(
             n_components,
@@ -35,8 +35,8 @@ class SummitNMFBase(ABC):
             eps,
             tol,
             dtype,
-            shuffle,
             save_loss_interval,
+            verbose
         )
         self.n_components = n_components
         self.lam = lam
@@ -48,8 +48,8 @@ class SummitNMFBase(ABC):
         self.eps = eps
         self.tol = tol
         self.dtype = dtype
-        self.shuffle = shuffle
         self.save_loss_interval = save_loss_interval
+        self.verbose = verbose
         self._is_fitted = False
 
     @abstractmethod
@@ -104,9 +104,9 @@ class SummitNMFBase(ABC):
     def get_loss_history(self) -> pd.DataFrame:
         if not self._is_fitted:
             raise RuntimeError("Model is not fitted yet.")
-        return self.loss_history.copy() # type: ignore
-    
-    def get_matrices(self, to_numpy:bool = True):
+        return self.loss_history.copy()  # type: ignore
+
+    def get_matrices(self, to_numpy: bool = True):
         if not self._is_fitted:
             raise RuntimeError("Model is not fitted yet.")
         return self._get_matrices(to_numpy=to_numpy)
@@ -123,8 +123,8 @@ class SummitNMFBase(ABC):
         eps,
         tol,
         dtype,
-        shuffle,
         save_loss_interval,
+        verbose
     ):
         if not isinstance(n_components, int) or n_components <= 0:
             raise ValueError("n_components must be a positive integer.")
@@ -148,10 +148,10 @@ class SummitNMFBase(ABC):
             raise ValueError("tol must be a non-negative float.")
         if not isinstance(dtype, torch.dtype):
             raise ValueError("dtype must be a torch.dtype.")
-        if not isinstance(shuffle, bool):
-            raise ValueError("shuffle must be a boolean.")
         if not isinstance(save_loss_interval, int) or save_loss_interval <= 0:
             raise ValueError("save_loss_interval must be a positive integer.")
+        if not isinstance(verbose, bool):
+            raise ValueError("verbose must be a boolean.")
 
     def _validate_X(self, X: torch.Tensor):
         if not isinstance(X, torch.Tensor):

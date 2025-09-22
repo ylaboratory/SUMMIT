@@ -6,6 +6,8 @@ build/
 dist/
 wheels/
 *.egg-info
+src/summit_nmf/utils/legacy/
+src/summit_nmf/modes/
 
 # macOS
 .DS_Store

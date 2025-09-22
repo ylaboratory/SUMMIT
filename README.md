@@ -1,5 +1,5 @@
 <div style="display: flex; align-items: center;">
-    <img src="./imgs/MINMF.svg" alt="SUMMIT-NMF" width="80" height="80">
+    <img src="./imgs/MINMF.svg" alt="SUMMIT-NMF" width="100" height="100">
 </div>
 
 # SUMMIT-NMF

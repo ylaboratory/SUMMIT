@@ -29,7 +29,9 @@ class FeatureEncoders:
             # Fit and transform only non-NA rows
             transformed_non_na = encoder.fit_transform(non_na_col).astype(np.float32)
             # Prepare a zero matrix for all rows
-            transformed = np.zeros((len(col), transformed_non_na.shape[1]), dtype=np.float32)
+            transformed = np.zeros(
+                (len(col), transformed_non_na.shape[1]), dtype=np.float32
+            )
             # Fill in the transformed values for non-NA rows
             transformed[~na_mask.to_numpy(), :] = transformed_non_na
             self.encoders[key] = encoder
@@ -53,7 +55,9 @@ class FeatureEncoders:
                 # Transform only non-NA rows
                 transformed_non_na = encoder.transform(non_na_col).astype(np.float32)  # type: ignore
                 # Prepare a zero matrix for all rows
-                transformed = np.zeros((len(col), transformed_non_na.shape[1]), dtype=np.float32)
+                transformed = np.zeros(
+                    (len(col), transformed_non_na.shape[1]), dtype=np.float32
+                )
                 # Fill in the transformed values for non-NA rows
                 transformed[~na_mask.to_numpy(), :] = transformed_non_na
                 transformed_matrices.append(transformed)
