@@ -25,12 +25,14 @@ class UnifiedSummitOptimizer:
         save_loss_interval: int = 5,
         verbose: bool = False,
         score_func: Optional[Callable] = None,
-        n_trials: int = 100
+        n_trials: int = 100,
+        n_jobs: int = 1
     ):
         self.n_components_range = n_components_range
         self.lam_range = lam_range
         self.n_folds = n_folds
         self.n_trials = n_trials
+        self.n_jobs = n_jobs
         self._validate_params()
 
         if score_func is not None:
@@ -94,9 +96,9 @@ class UnifiedSummitOptimizer:
         study = optuna.create_study(
             sampler=optuna.samplers.NSGAIISampler(),  # NSGA-II works well for multi-objective
             directions=["maximize"] * len(covariate_keys),
-            study_name="multi-covariates optimization (SummitNMF)",
+            study_name="multi-covariates optimization (UnifiedSummitNMF)",
         )
-        study.optimize(objective, n_trials=self.n_trials)
+        study.optimize(objective, n_trials=self.n_trials, n_jobs=self.n_jobs)
 
         # extract best trial(s) — Pareto front
         pareto_trials = study.best_trials
