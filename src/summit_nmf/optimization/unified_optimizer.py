@@ -13,10 +13,12 @@ class UnifiedSummitOptimizer:
         self,
         n_components_range: Tuple[int, int]=(5, 50),
         lam_range: Tuple[float, float]=(1e-0, 1e5),
+        l1_beta_range: Tuple[float, float]=(1e-10, 1e2),
         n_folds: int = 3,
         weighted_sampling: bool = False,
         batch_size: Optional[int] = None,
         max_iter: int = 200,
+        init: str = "random",
         device: str = "cpu",
         random_state: int = 42,
         eps: float = 1e-10,
@@ -30,6 +32,7 @@ class UnifiedSummitOptimizer:
     ):
         self.n_components_range = n_components_range
         self.lam_range = lam_range
+        self.l1_beta_range = l1_beta_range
         self.n_folds = n_folds
         self.n_trials = n_trials
         self.n_jobs = n_jobs
@@ -45,6 +48,7 @@ class UnifiedSummitOptimizer:
             "weighted_sampling": weighted_sampling,
             "batch_size": batch_size,
             "max_iter": max_iter,
+            "init": init,
             "device": device,
             "random_state": random_state,
             "eps": eps,
@@ -67,8 +71,9 @@ class UnifiedSummitOptimizer:
                 "n_components", self.n_components_range[0], self.n_components_range[1]
             )
             lam = trial.suggest_float("lam", self.lam_range[0], self.lam_range[1], log=True)
+            l1_beta = trial.suggest_float("l1_beta", self.l1_beta_range[0], self.l1_beta_range[1], log=True)
             params = self.params.copy()
-            params.update({"n_components": n_components, "lam": lam})
+            params.update({"n_components": n_components, "lam": lam, "l1_beta": l1_beta})
 
             # store scores for each covariate
             cov_scores = np.zeros(len(covariate_keys))
@@ -112,6 +117,7 @@ class UnifiedSummitOptimizer:
         best_params = self.params.copy()
         best_params["n_components"] = best_trial.params["n_components"]
         best_params["lam"] = best_trial.params["lam"]
+        best_params["l1_beta"] = best_trial.params["l1_beta"]
         self.best_params = best_params
 
         return best_params
@@ -136,6 +142,8 @@ class UnifiedSummitOptimizer:
             raise ValueError("n_components_range must be a tuple of two integers.")
         if not (isinstance(self.lam_range, tuple) and len(self.lam_range) == 2):
             raise ValueError("lam_range must be a tuple of two floats.")
+        if not (isinstance(self.l1_beta_range, tuple) and len(self.l1_beta_range) == 2):
+            raise ValueError("l1_beta_range must be a tuple of two floats.")
         if self.n_components_range[0] >= self.n_components_range[1]:
             raise ValueError("In n_components_range, the first value must be less than the second value.")
         if self.lam_range[0] >= self.lam_range[1]:

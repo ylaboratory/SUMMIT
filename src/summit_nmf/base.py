@@ -16,6 +16,7 @@ class SummitNMFBase(ABC):
         weighted_sampling: bool,
         batch_size: Optional[int],
         max_iter: int,
+        init: str,
         device: str,
         random_state: int,
         eps: float,
@@ -30,6 +31,7 @@ class SummitNMFBase(ABC):
             weighted_sampling,
             batch_size,
             max_iter,
+            init,
             device,
             random_state,
             eps,
@@ -43,6 +45,7 @@ class SummitNMFBase(ABC):
         self.max_iter = max_iter
         self.weighted_sampling = weighted_sampling
         self.batch_size = batch_size
+        self.init = init
         self.device = torch.device(device)
         self.random_state = random_state
         self.eps = eps
@@ -118,6 +121,7 @@ class SummitNMFBase(ABC):
         weighted_sampling,
         batch_size,
         max_iter,
+        init,
         device,
         random_state,
         eps,
@@ -138,6 +142,8 @@ class SummitNMFBase(ABC):
             raise ValueError("batch_size must be a positive integer or None.")
         if not isinstance(max_iter, int) or max_iter <= 0:
             raise ValueError("max_iter must be a positive integer.")
+        if init not in ["random", "nndsvd", "nndsvda", "nndsvdar"]:
+            raise ValueError("init must be one of 'random', 'nndsvd', 'nndsvda', or 'nndsvdar'.")
         if not isinstance(device, str):
             raise ValueError("device must be a string.")
         if not isinstance(random_state, int):

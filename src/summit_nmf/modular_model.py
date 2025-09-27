@@ -6,6 +6,7 @@ from copy import deepcopy
 from tqdm import tqdm
 from typing import Union, Dict, List, Union, Optional
 from itertools import product
+from sklearn.decomposition._nmf import _initialize_nmf # type: ignore
 
 from summit_nmf.base import SummitNMFBase
 from contextlib import nullcontext
@@ -27,6 +28,7 @@ class ModularSummitNMF(SummitNMFBase):
         weighted_sampling: bool = False,
         batch_size: Optional[int] = None,
         max_iter: int = 200,
+        init: str = "random",
         device: str = "cpu",
         random_state: int = 0,
         eps: float = 1e-10,
@@ -41,6 +43,7 @@ class ModularSummitNMF(SummitNMFBase):
             weighted_sampling,
             batch_size,
             max_iter,
+            init,
             device,
             random_state,
             eps,
@@ -62,15 +65,9 @@ class ModularSummitNMF(SummitNMFBase):
         self.n_samples, self.n_features = X.shape
 
         # Initialize W and H with non-negative random values
-        self.W = torch.rand(
-            (self.n_samples, self.n_components), device=self.device, dtype=self.dtype
-        )
-        self.W = self.W.clamp(min=self.eps)
-
-        self.H = torch.rand(
-            (self.n_components, self.n_features), device=self.device, dtype=self.dtype
-        )
-        self.H = self.H.clamp(min=self.eps)
+        W, H = _initialize_nmf(X.cpu().numpy(), self.n_components, init=self.init, random_state=self.random_state)
+        self.W = torch.tensor(W, device=self.device, dtype=self.dtype).clamp(min=self.eps)
+        self.H = torch.tensor(H, device=self.device, dtype=self.dtype).clamp(min=self.eps)
 
         # Encode covariates
         self.covariate_keys = y.columns.tolist()
@@ -313,22 +310,18 @@ class ModularSummitNMF(SummitNMFBase):
         pred_df = pd.DataFrame(decoded_labels)
         return pred_df
 
-    def _get_joint_label_embeddings(self):
-        # Get the number of categories for each covariate
-        category_sizes = [Y.shape[1] for Y in self.Ys]
-        # Generate all possible combinations of category indices
-        combinations = list(product(*[range(size) for size in category_sizes]))
-        joint_embeddings = torch.zeros(
-            (len(combinations), self.n_components), device="cpu", dtype=self.dtype
-        )
+    def get_label_embeddings(self):
+        if not self._is_fitted:
+            raise RuntimeError("Model is not fitted yet.")
+        label_embeddings: Dict[str, Dict[str, np.ndarray]] = {}
 
-        for idx, combo in enumerate(combinations):
-            emb = torch.zeros(self.n_components, device="cpu", dtype=self.dtype)
-            for i, cat_idx in enumerate(combo):
-                emb += self.Bs[i][cat_idx, :] + self.Rs[i].squeeze(0)
-            joint_embeddings[idx, :] = emb
-
-        return joint_embeddings
+        for i, cov in enumerate(self.covariate_keys):
+            label_embeddings[cov] = {}
+            for j, category in enumerate(self.fe.encoded_labels[cov]):
+                # embedding = (self.Bs[i][j] + self.Rs[i]).cpu().numpy()
+                embedding = self.Bs[i][j].cpu().numpy()
+                label_embeddings[cov][category.replace(f"{cov}_", "")] = embedding
+        return label_embeddings
 
     def _get_matrices(self, to_numpy: bool):
         if to_numpy:

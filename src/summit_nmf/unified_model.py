@@ -6,6 +6,7 @@ from copy import deepcopy
 from tqdm import tqdm
 from typing import Union, Dict, List, Union, Optional
 from itertools import product
+from sklearn.decomposition._nmf import _initialize_nmf # type: ignore
 
 from summit_nmf.base import SummitNMFBase
 from contextlib import nullcontext
@@ -23,9 +24,11 @@ class UnifiedSummitNMF(SummitNMFBase):
         self,
         n_components: int,
         lam: Union[int, float] = 1.0,
+        l1_beta: float = 0.0,
         weighted_sampling: bool = False,
         batch_size: Optional[int] = None,
         max_iter: int = 200,
+        init: str = "random",
         device: str = "cpu",
         random_state: int = 0,
         eps: float = 1e-10,
@@ -40,6 +43,7 @@ class UnifiedSummitNMF(SummitNMFBase):
             weighted_sampling=weighted_sampling,
             batch_size=batch_size,
             max_iter=max_iter,
+            init=init,
             device=device,
             random_state=random_state,
             eps=eps,
@@ -48,6 +52,9 @@ class UnifiedSummitNMF(SummitNMFBase):
             save_loss_interval=save_loss_interval,
             verbose=verbose,
         )
+        self.l1_beta = l1_beta
+        if self.l1_beta < 0:
+            raise ValueError("l1_beta must be non-negative.")
 
     def _init_matrices(self, X, y):
         # set random seed for cpu and gpu
@@ -60,15 +67,18 @@ class UnifiedSummitNMF(SummitNMFBase):
         self.n_samples, self.n_features = X.shape
 
         # Initialize W and H with non-negative random values
-        self.W = torch.rand(
-            (self.n_samples, self.n_components), device=self.device, dtype=self.dtype
-        )
-        self.W = self.W.clamp(min=self.eps)
+        if self.init == "random":
+            self.W = torch.rand(
+                (self.n_samples, self.n_components), device=self.device, dtype=self.dtype
+            ).clamp(min=self.eps)
 
-        self.H = torch.rand(
-            (self.n_components, self.n_features), device=self.device, dtype=self.dtype
-        )
-        self.H = self.H.clamp(min=self.eps)
+            self.H = torch.rand(
+                (self.n_components, self.n_features), device=self.device, dtype=self.dtype
+            ).clamp(min=self.eps)
+        else:
+            W, H = _initialize_nmf(X.cpu().numpy(), self.n_components, init=self.init, random_state=self.random_state)
+            self.W = torch.tensor(W, device=self.device, dtype=self.dtype).clamp(min=self.eps)
+            self.H = torch.tensor(H, device=self.device, dtype=self.dtype).clamp(min=self.eps)
 
         # Encode covariates
         self.covariate_keys = y.columns.tolist()
@@ -88,6 +98,9 @@ class UnifiedSummitNMF(SummitNMFBase):
         ]
         self.Bs = [B.clamp(min=self.eps) for B in self.Bs]
 
+        # Initialize beta values
+        self.betas = [1.0 for _ in range(len(self.covariate_keys))]
+        
         # Initialize auxiliary variables and R
         self.ones = torch.ones(
             (self.n_samples, 1), device=self.device, dtype=self.dtype
@@ -108,10 +121,10 @@ class UnifiedSummitNMF(SummitNMFBase):
         if self.batch_size is None:
             self.batch_size = X.shape[0]
 
-        def _compute_YBR(Ys, Bs, ones, R):
+        def _compute_YBR(betas, Ys, Bs, ones, R):
             YBR = ones @ R
-            for Y, B in zip(Ys, Bs):
-                YBR += Y @ B
+            for beta, Y, B in zip(betas, Ys, Bs):
+                YBR += beta * Y @ B
             return YBR
 
         with torch.no_grad():
@@ -147,22 +160,23 @@ class UnifiedSummitNMF(SummitNMFBase):
 
                         # update Bs
                         for idx in range(len(self.Bs)):
-                            YBR = _compute_YBR(Ys_batch, self.Bs, ones_batch, self.R)
+                            YBR = _compute_YBR(self.betas, Ys_batch, self.Bs, ones_batch, self.R)
                             Y_batch = Ys_batch[idx]
+                            beta = self.betas[idx]
 
                             # update B
-                            numerator = 2 * self.lam * Y_batch.T @ W_batch
-                            denominator = 2 * self.lam * Y_batch.T @ YBR
+                            numerator = 2 * self.lam * beta * Y_batch.T @ W_batch
+                            denominator = 2 * self.lam * beta * Y_batch.T @ YBR
                             self.Bs[idx] *= numerator / denominator.clamp(min=self.eps)
 
                         # update R
-                        YBR = _compute_YBR(Ys_batch, self.Bs, ones_batch, self.R)
+                        YBR = _compute_YBR(self.betas, Ys_batch, self.Bs, ones_batch, self.R)
                         numerator = 2 * self.lam * ones_batch.T @ W_batch
                         denominator = 2 * self.lam * ones_batch.T @ YBR
                         self.R *= numerator / denominator.clamp(min=self.eps)
 
                         # update W
-                        YBR = _compute_YBR(Ys_batch, self.Bs, ones_batch, self.R)
+                        YBR = _compute_YBR(self.betas, Ys_batch, self.Bs, ones_batch, self.R)
                         numerator = 2 * X_batch @ self.H.T + 2 * self.lam * YBR
                         denominator = (
                             2 * W_batch @ (self.H @ self.H.T) + 2 * self.lam * W_batch
@@ -171,6 +185,14 @@ class UnifiedSummitNMF(SummitNMFBase):
                             numerator / denominator.clamp(min=self.eps)
                         )
                         self.W[batch_indices, :] = W_batch
+
+                        # update beta
+                        for idx in range(len(self.betas)):
+                            YBR = _compute_YBR(self.betas, Ys_batch, self.Bs, ones_batch, self.R)
+                            YB = Ys_batch[idx] @ self.Bs[idx]
+                            numerator = 2 * self.lam * torch.trace(YB @ W_batch.T)
+                            denominator = 2 * self.lam * torch.trace(YB @ YBR.T) + self.l1_beta
+                            self.betas[idx] *= (numerator / denominator.clamp(min=self.eps)).item()
 
                     # compute loss
                     if (i_iter % self.save_loss_interval == 0) or (
@@ -232,7 +254,8 @@ class UnifiedSummitNMF(SummitNMFBase):
     def _compute_loss(self) -> List[float]:
         reconstruction_loss = self._compute_reconstruction_loss()
         harmonic_loss = self._compute_harmonic_loss()
-        total_loss = reconstruction_loss + self.lam * harmonic_loss
+        reg_loss = self._compute_regularization_loss()
+        total_loss = reconstruction_loss + self.lam * harmonic_loss + reg_loss
         return [total_loss, reconstruction_loss, harmonic_loss]
 
     def _compute_reconstruction_loss(self) -> float:
@@ -243,9 +266,15 @@ class UnifiedSummitNMF(SummitNMFBase):
     def _compute_harmonic_loss(self) -> float:
         diff = torch.zeros_like(self.W)
         diff += self.W
-        for Y, B in zip(self.Ys, self.Bs):
-            diff -= Y @ B
+        for beta, Y, B in zip(self.betas, self.Ys, self.Bs):
+            diff -= beta * Y @ B
         return (diff.norm(p="fro") ** 2).item()
+    
+    def _compute_regularization_loss(self) -> float:
+        reg_loss = 0.0
+        for beta in self.betas:
+            reg_loss += self.l1_beta * abs(beta)
+        return reg_loss
 
     def _predict(self, X: torch.Tensor, max_iter: int) -> pd.DataFrame:
         if not self._is_fitted:
@@ -301,6 +330,18 @@ class UnifiedSummitNMF(SummitNMFBase):
 
         return joint_embeddings
 
+    def get_label_embeddings(self):
+        if not self._is_fitted:
+            raise RuntimeError("Model is not fitted yet.")
+        label_embeddings: Dict[str, Dict[str, np.ndarray]] = {}
+
+        for i, cov in enumerate(self.covariate_keys):
+            label_embeddings[cov] = {}
+            for j, category in enumerate(self.fe.encoded_labels[cov]):
+                embedding = self.Bs[i][j].cpu().numpy()
+                label_embeddings[cov][category.replace(f"{cov}_", "")] = embedding
+        return label_embeddings
+
     def _get_matrices(self, to_numpy: bool):
         if to_numpy:
             return {
@@ -310,6 +351,7 @@ class UnifiedSummitNMF(SummitNMFBase):
                 "Bs": [B.numpy() for B in self.Bs],
                 "R": self.R.numpy(),
                 "ones": self.ones.numpy(),
+                "betas": self.betas,
             }
         else:
             return {
@@ -319,4 +361,5 @@ class UnifiedSummitNMF(SummitNMFBase):
                 "Bs": self.Bs,
                 "R": self.R,
                 "ones": self.ones,
+                "betas": self.betas,
             }
