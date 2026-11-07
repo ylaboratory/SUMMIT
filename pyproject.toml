@@ -1,0 +1,27 @@
+[project]
+name = "summit"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "weihaolee", email = "steve24563@gmail.com" }
+]
+requires-python = ">=3.13"
+dependencies = [
+    "numpy>=2.4.3",
+    "pandas>=3.0.2",
+    "scipy>=1.17.1",
+    "torch==2.10.0",
+]
+
+[project.scripts]
+summit = "summit:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true
